@@ -1,0 +1,87 @@
+[
+  {
+    "bestand": "06670.csv",
+    "bytes": 716750,
+    "sha256": "90b4b550e1e0ce35c5b588fe00f318404d5ce6de8f68958f63deae6621c95338"
+  },
+  {
+    "bestand": "airports-extended.csv",
+    "bytes": 1467576,
+    "sha256": "a57d958ae8155b4a5f09c36f1814473f84bd903b40ee9bb4ec4014c2c9c83437"
+  },
+  {
+    "bestand": "schedule_airport.csv",
+    "bytes": 32260769,
+    "sha256": "2546d814d97789009d71904e47f8ccf25bbd367411b4ad6ef3a03124bf1fb387"
+  },
+  {
+    "bestand": "1 seconde csv bestanden/1Flight 1.xlsx",
+    "bytes": 1213705,
+    "sha256": "fcbcaecaab8eda32092622fb0ad33fdff293bd174dc096cb71085b6531a9aaae"
+  },
+  {
+    "bestand": "1 seconde csv bestanden/1Flight 2.xlsx",
+    "bytes": 1016327,
+    "sha256": "24234d46255563d32a185f05e0abdaf3795a2607a5b14ed4cd4a9621ffc1a9ab"
+  },
+  {
+    "bestand": "1 seconde csv bestanden/1Flight 3.xlsx",
+    "bytes": 1251985,
+    "sha256": "eb6e72db4e09e09b858019aa8d5119ec55e7117ffa54c8a6ec0e920d60490b6c"
+  },
+  {
+    "bestand": "1 seconde csv bestanden/1Flight 4.xlsx",
+    "bytes": 1107041,
+    "sha256": "c7216586dbcfa9ea0439cc5e0b19f261eb1b6f53dbf625dd218afd3d7b70d6bf"
+  },
+  {
+    "bestand": "1 seconde csv bestanden/1Flight 5.xlsx",
+    "bytes": 1147045,
+    "sha256": "68814975874ef5c289f74cd3c365757171a83c62d3462966e95f92ad2fc028f8"
+  },
+  {
+    "bestand": "1 seconde csv bestanden/1Flight 6.xlsx",
+    "bytes": 998500,
+    "sha256": "5641c5a95ee02592a9ec1ebd5a88435c6cd89e4abd96dfa7b0fdd434375a2fa3"
+  },
+  {
+    "bestand": "1 seconde csv bestanden/1Flight 7.xlsx",
+    "bytes": 1052124,
+    "sha256": "c8cacdaca2a40d61c71aa769997efff93932d35eb41b2079415d77a5248a66fb"
+  },
+  {
+    "bestand": "30 seconden csv bestanden/30Flight 1.xlsx",
+    "bytes": 16700,
+    "sha256": "99d3913e42f62fbf5e0b4b27cd02a5af768f83888c06e3f995ff5117c07ed54c"
+  },
+  {
+    "bestand": "30 seconden csv bestanden/30Flight 2.xlsx",
+    "bytes": 14852,
+    "sha256": "e1688ed1891a0a1699980d3a140fb5a847a7c96ac0fe7e42baf983229ed4e008"
+  },
+  {
+    "bestand": "30 seconden csv bestanden/30Flight 3.xlsx",
+    "bytes": 17044,
+    "sha256": "6a91a93942427ba799a71401d3a1da372e076dc7745b2ca1df9557e2596e0c01"
+  },
+  {
+    "bestand": "30 seconden csv bestanden/30Flight 4.xlsx",
+    "bytes": 15770,
+    "sha256": "f15dfa5230ee27e87b8ca4432f2b2a6cfa4e507c998e4eb7fa75f572dbcfa513"
+  },
+  {
+    "bestand": "30 seconden csv bestanden/30Flight 5.xlsx",
+    "bytes": 16047,
+    "sha256": "f09d68d0e253ad819e8e29940f8fa7aa7b73307f569de9f13e9fcd302f62cacf"
+  },
+  {
+    "bestand": "30 seconden csv bestanden/30Flight 6.xlsx",
+    "bytes": 14713,
+    "sha256": "4ec9c7be74e6aa02eb36f2d11372e0b983257fa61be65ba3eeb562e247d65dd8"
+  },
+  {
+    "bestand": "30 seconden csv bestanden/30Flight 7.xlsx",
+    "bytes": 15132,
+    "sha256": "4d07140636f732a06eb50bb690ac4195296edef8bbc72e1b05bb66b637b45a14"
+  }
+]

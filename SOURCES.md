@@ -1,0 +1,31 @@
+### Data en herkomst
+
+- **schedule_airport.csv**: aangeleverd via Brightspace voor Case 3, 323.461 bewegingen in Zürich, 1 januari 2019 t/m 31 december 2020. De bron bevat werkelijke tijden, geen volledige annuleringenregistratie. Herkomst en definities uit *Case 3 - Van data naar informatie*, pagina 7–9 en *case3_vlucht-3.pptx*. Geen dienstregeling van vandaag.
+- **airports-extended.csv**: door Hugo gedownload van [Kaggle / OpenFlights](https://www.kaggle.com/datasets/open-flights/airports-train-stations-and-ferry-terminals). 10.668 locaties, inclusief andere locaties dan luchthavens. Het daadwerkelijk ontvangen bestand is zonder header en komma-gescheiden, overeenkomstig het [OpenFlights-schema](https://openflights.org/data.php). OpenFlights vermeldt de Open Database License en bijbehorende attribution/share-alike voorwaarden; bronattributie blijft hierbij behouden. ICAO is de koppelsleutel; alleen type `airport` wordt als luchthaven gekoppeld.
+- **06670.csv**: door Hugo opgehaalde historische Meteostat-export voor Zürich-Kloten, station 06670. Legacy daily schema zonder header: date, tavg, tmin, tmax, prcp, snow, wdir, wspd, wpgt, pres, tsun. [Meteostat station](https://meteostat.net/en/station/06670), [parameters en eenheden](https://dev.meteostat.net/api/point/daily), [huidige bulkdocumentatie](https://dev.meteostat.net/data/timeseries/daily). De huidige jaarlijkse bulkbestanden hebben een header en bronkolommen en kunnen modeldata bevatten. De aangeleverde snapshot heeft die bronkolommen niet, dus exacte herkomst per waarneming is niet te reconstrueren. We behandelen het als een historische dataset, niet als een perfecte sensorwaarheid. [Meteostat licentie](https://dev.meteostat.net/license).
+- **1Flight 1–7.xlsx en 30Flight 1–7.xlsx**: aangeleverd via Brightspace, zeven voorbeeldvluchten Amsterdam–Barcelona, zeven fijne en zeven grove meetreeksen. De opgegeven naam “1 seconde” klopt niet met de mediane tijdstap van 0,25 seconde. Geen datum/sleutel om aan Zürich te koppelen. Snelheid heeft geen aantoonbare eenheid in de bron: de app toont daarom de broneenheid zonder conversie.
+
+Alle 17 ontvangen databestanden staan ongewijzigd in `data_sources.zip`. `manifest.json` bevat pad, omvang en SHA-256. De pdf’s en lespresentatie zijn instructiemateriaal en hoeven niet publiek opnieuw verspreid te worden. De originele bestanden staan lokaal in de bovenliggende Case 3-map.
+
+### Reproduceerbaar opnieuw ophalen
+
+`python fetch_public_sources.py` haalt een actuele OpenFlights-snapshot en Meteostat-dagdata van 2019 en 2020 op in `downloads/`, inclusief ophaaltijd en hashes. Het script gebruikt openbare HTTPS-downloads met timeout en schrijft nooit de vaste analysebron over. Actuele downloads kunnen inhoudelijk afwijken van de aangeleverde historische versie. Het dashboard start ook zonder netwerktoegang tot deze bronnen; alleen de kaartachtergrond vraagt internet.
+
+### Codebronnen en aanpassingen
+
+De analyse en interface zijn voor deze bestanden geschreven met hulp van Codex. Geen Kaggle-model of notebook integraal overgenomen. Gebruikte API-patronen en documentatie:
+
+- [Streamlit caching](https://docs.streamlit.io/develop/api-reference/caching-and-state/st.cache_data): cache voor CSV-koppelingen, profielbestanden en modelresultaten, zodat klikken niet steeds Excel-bestanden of modellen opnieuw verwerkt.
+- [Streamlit Plotly](https://docs.streamlit.io/develop/api-reference/charts/st.plotly_chart): interactieve grafieken met eigen filters en verklarende tekst.
+- [pandas merge](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.merge.html): left joins met `validate='many_to_one'`, zodat ongekoppelde vluchten behouden blijven en dubbele sleutels niet stilzwijgend rijen vermenigvuldigen.
+- [Plotly kaartmarkeringen](https://plotly.com/python/tile-scatter-maps/): punten op echte coördinaten, log10-kleur voor scheve aantallen, legenda terugvertaald naar aantallen. CARTO / OpenStreetMap-achtergrond.
+- [scikit-learn: veelgemaakte fouten](https://scikit-learn.org/stable/common_pitfalls.html): imputer/scaler uitsluitend op de training fitten; chronologische validatie/test.
+- [Ridge](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.Ridge.html), [histogram gradient boosting](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.HistGradientBoostingRegressor.html) en [permutatiebelang](https://scikit-learn.org/stable/modules/permutation_importance.html): kleine reproduceerbare modellen, vaste instellingen en seed 42. Alle kandidaten vooraf vastgelegd; keuze op validatie-MAE, test niet gebruiken voor tuning.
+
+### Grenzen en bewuste ontwerpkeuzes
+
+Het rooster, luchthavenregister en weerbestand worden niet tot een causaal model verheven. Dagweer en dagvertraging tonen samenhang; drukte, seizoen en vluchtmix kunnen die verklaren. Een vluchtdag is de lokale datum in het rooster, niet een gereconstrueerd UTC-tijdstip. Middernachtcorrectie gebruikt de dichtstbijzijnde dag bij ontbrekende werkelijke datum. Zomertijd en vertragingen groter dan 12 uur zijn niet betrouwbaar terug te halen. De sensitiviteitstabel maakt dit zichtbaar.
+
+Het dagmodel schat de gemiddelde positieve **vertrekvertraging**, niet de kans op vertraging van één vlucht. Het gebruikt waarnemingen van gisteren, onder de aanname dat die tijdig beschikbaar zijn; geen historische publicatietijdstempels zijn geleverd. Validatie sep–okt 2019 bepaalt de modelkeuze en foutband; test nov–dec 2019 is onafhankelijk van fit/selectie. 2020 is een aparte stresstest met dagelijks bijgewerkte lag-invoer, zonder hertraining. De band is een empirische onzekerheidsindicatie met 90%-streefdekking, geen gegarandeerd betrouwbaarheidsinterval bij tijdsafhankelijkheid of verschuivende verdeling.
+
+Het overzicht toont bewust maar één hoofdgrafiek. Ruwe tabellen, gates en codes, modeldiagnostiek en Amsterdam–Barcelona-profielen hebben een eigen tweede laag. De kaart opent op Europa voor een leesbaar gebied; opklimmend blauw en log-kleuren voorkomen dat de grootste luchthaven alle contrast opeist. De tijdgrafiek heeft een lineaire as en expliciete gaten. Onbekende dagen worden niet automatisch nul.
