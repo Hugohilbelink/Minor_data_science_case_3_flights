@@ -28,13 +28,28 @@ Geen API-key, handmatige uitpakstap of absolute lokale paden nodig. De ZIP wordt
 
 Het rooster bevat 242.738 bewegingen in 2019 en 80.723 in 2020 (−66,7%). Het aandeel vertrekken ≥15 minuten te laat daalt van 30,9% naar 14,7%. De 7-daags-gemiddelde-baseline wint op validatie; test-MAE november–december 2019 is circa 2,85 min op de gemiddelde positieve vertrekvertraging per dag. Dat is geen voorspelling voor een individuele vlucht of voor het huidige jaar.
 
+## Welke bestanden zijn nodig?
+
+| Bestand | Functie |
+|---|---|
+| `app.py` | Streamlit-interface en grafieken; startbestand |
+| `data_pipeline.py` | Data inlezen, controleren en koppelen |
+| `modeling.py` | Baselines, voorspelmodellen en evaluatie |
+| `data_sources.zip` | Alle 17 originele CSV-/Excel-bestanden, ongewijzigd gebundeld |
+| `requirements.txt` | Python-bibliotheken voor de installatie |
+| `SOURCES.md` | Bronvermelding en verantwoording, ook zichtbaar in de app |
+| `manifest.json` | Bestandslijst en SHA-256-controlesommen van de data |
+| `README.md` | Startinstructies en uitleg |
+| `.gitignore` | Houdt caches, lokale omgevingen en secrets buiten GitHub |
+
+De eerste zes bestanden zijn nodig om de complete app te draaien. De laatste drie zorgen voor controleerbaarheid en een duidelijke overdracht. Alle negen blijven in deze repository.
+
+De ZIP is bij het bouwen gemaakt van de los aangeleverde bestanden. Het rooster is circa 32 MB, groter dan de limiet voor een los bestand via de GitHub-webupload. De ZIP is circa 14,6 MB. Er zijn geen datasets samengevoegd, aangepast of weggelaten; uitpakken is niet nodig voor het dashboard.
+
 ## Reproduceerbaarheid en controle
 
-```sh
-python -m unittest test_dashboard.py
-python fetch_public_sources.py
-```
+De vaste data is opgenomen, dus een schone clone werkt zonder downloads of hulpscripts. `manifest.json` bevat per bronbestand de SHA-256; bronvermelding, aannames en code-documentatie staan in [SOURCES.md](SOURCES.md).
 
-Het tweede commando is optioneel en slaat nieuwe openbare bronversies apart op. De analyse blijft op de vaste aangeleverde snapshot draaien. Bestandschecksums staan in `manifest.json`; bronvermelding, aannames en code-documentatie staan in [SOURCES.md](SOURCES.md). De app is ontworpen op de hoogste rubricbeschrijvingen; de feitelijke beoordeling en live presentatie blijven aan docent en groep.
+Lokale onderhoudsscripts voor tests en optionele nieuwe downloads staan in de naastgelegen map `onderhoud`, buiten de publicatiemap. Ze zijn niet nodig voor Streamlit. De acht datatests en de pagina-/filtercontroles zijn uitgevoerd; kaart, voorspelling en profieldata zijn ook online gecontroleerd.
 
-De rekenlaag staat in `data_pipeline.py`, de voorspelling in `modeling.py`, de interface in `app.py`. De ZIP bevat uitsluitend de 17 databestanden, geen privégegevens uit andere schoolmappen of authenticatiegegevens.
+De app is ontworpen op de hoogste rubricbeschrijvingen; de feitelijke beoordeling en live presentatie blijven aan docent en groep.

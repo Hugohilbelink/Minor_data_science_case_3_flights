@@ -5,11 +5,13 @@
 - **06670.csv**: door Hugo opgehaalde historische Meteostat-export voor Zürich-Kloten, station 06670. Legacy daily schema zonder header: date, tavg, tmin, tmax, prcp, snow, wdir, wspd, wpgt, pres, tsun. [Meteostat station](https://meteostat.net/en/station/06670), [parameters en eenheden](https://dev.meteostat.net/api/point/daily), [huidige bulkdocumentatie](https://dev.meteostat.net/data/timeseries/daily). De huidige jaarlijkse bulkbestanden hebben een header en bronkolommen en kunnen modeldata bevatten. De aangeleverde snapshot heeft die bronkolommen niet, dus exacte herkomst per waarneming is niet te reconstrueren. We behandelen het als een historische dataset, niet als een perfecte sensorwaarheid. [Meteostat licentie](https://dev.meteostat.net/license).
 - **1Flight 1–7.xlsx en 30Flight 1–7.xlsx**: aangeleverd via Brightspace, zeven voorbeeldvluchten Amsterdam–Barcelona, zeven fijne en zeven grove meetreeksen. De opgegeven naam “1 seconde” klopt niet met de mediane tijdstap van 0,25 seconde. Geen datum/sleutel om aan Zürich te koppelen. Snelheid heeft geen aantoonbare eenheid in de bron: de app toont daarom de broneenheid zonder conversie.
 
-Alle 17 ontvangen databestanden staan ongewijzigd in `data_sources.zip`. `manifest.json` bevat pad, omvang en SHA-256. De pdf’s en lespresentatie zijn instructiemateriaal en hoeven niet publiek opnieuw verspreid te worden. De originele bestanden staan lokaal in de bovenliggende Case 3-map.
+Alle 17 ontvangen databestanden staan ongewijzigd in `data_sources.zip`. `manifest.json` bevat pad, omvang en SHA-256. De pdf’s en lespresentatie zijn instructiemateriaal en hoeven niet publiek opnieuw verspreid te worden. De instructiebestanden staan lokaal in `Case 3/opdracht`. De ZIP bewaart alle oorspronkelijke databestanden; losse duplicaten zijn buiten de werkmap gearchiveerd.
 
-### Reproduceerbaar opnieuw ophalen
+### Vaste analysebron en optionele nieuwe downloads
 
-`python fetch_public_sources.py` haalt een actuele OpenFlights-snapshot en Meteostat-dagdata van 2019 en 2020 op in `downloads/`, inclusief ophaaltijd en hashes. Het script gebruikt openbare HTTPS-downloads met timeout en schrijft nooit de vaste analysebron over. Actuele downloads kunnen inhoudelijk afwijken van de aangeleverde historische versie. Het dashboard start ook zonder netwerktoegang tot deze bronnen; alleen de kaartachtergrond vraagt internet.
+De app leest de meegeleverde snapshot in `data_sources.zip`. Nieuwe downloads zijn niet nodig om de analyse te reproduceren. Wie actuele bronversies wil vergelijken kan [OpenFlights rechtstreeks downloaden](https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports-extended.dat) en de [Meteostat-dagdata van 2019](https://data.meteostat.net/daily/2019/06670.csv.gz) en [2020](https://data.meteostat.net/daily/2020/06670.csv.gz) ophalen. Deze nieuwe weerbestanden hebben een ander schema en mogen niet blind de legacy-bron vervangen.
+
+Lokaal is het optionele downloadscript bewaard in `Case 3/onderhoud/fetch_public_sources.py`; het hoort niet bij de gepubliceerde app. Actuele downloads kunnen inhoudelijk afwijken van de aangeleverde historische versie. Het dashboard start ook zonder netwerktoegang tot deze bronnen; alleen de kaartachtergrond vraagt internet.
 
 ### Codebronnen en aanpassingen
 
