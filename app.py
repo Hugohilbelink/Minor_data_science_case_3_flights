@@ -258,7 +258,7 @@ elif page=='Vluchtprofielen':
     with st.expander('Bronmetingen en ontbrekende waarden'):st.json(pm);st.dataframe(sub.head(200),width='stretch');download(sub,f'vlucht_{flight}_{resolution}.csv')
 
 elif page=='Data & verantwoording':
-    heading('ZRH / 06 · CONTROLEERBAAR','Van 17 bronnen naar één verhaal','Inspectie, beargumenteerde keuzes en gevoeligheidsanalyse. De oorspronkelijke bestanden zijn byte voor byte bewaard in data_sources.zip; manifest.json bevat de SHA-256-controlesommen.')
+    heading('ZRH / 06 · CONTROLEERBAAR','Van 17 bronnen naar één verhaal','Inspectie, beargumenteerde keuzes en gevoeligheidsanalyse. De oorspronkelijke bestanden zijn byte voor byte bewaard in data_sources.zip.')
     a,b,c=st.columns(3);a.metric('Roosterrijen vóór / na',f"{number(meta['raw_rows'])} / {number(meta['clean_rows'])}");b.metric('Luchthavenbron',number(meta['air_rows']));c.metric('Weerbron · alle jaren',number(meta['weather_rows']))
     st.subheader('Welke ingrepen zijn gedaan, en waarom?');st.dataframe(meta['audit'],width='stretch',hide_index=True)
     st.write(f"Kaartkoppeling: {d.loc[d.lat.notna(),'icao'].nunique()} van {d.icao.nunique()} aanwezige ICAO-codes; {100*d.lat.notna().mean():.3f}% van alle bewegingen. Weerkoppeling: {d.loc[d.tavg.notna(),'date'].nunique()} kalenderdagen met temperatuur. Beide joins zijn many-to-one gevalideerd: ze vermenigvuldigen geen vluchten.")
