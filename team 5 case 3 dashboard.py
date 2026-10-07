@@ -27,6 +27,10 @@ with st.spinner('De bronnen koppelen en controleren…'):
     all_d,w,meta=load_data()
 
 PAGES=['Overzicht','Verkeer','Landenkaart','Luchthavens','Vertraging & weer','Voorspelling','Vluchtprofielen','Data & methode','Presenteren']
+def reset_filters():
+    defaults={'filter_years':[2019,2020],'filter_months':(1,12),'filter_direction':'Beide','filter_region':'Wereld','filter_countries':[],'filter_aggregation':'Maand','filter_minimum':20}
+    for key,value in defaults.items():st.session_state[key]=value
+
 with st.sidebar:
     st.markdown('## ✈ Zürich Airport')
     st.caption('CASE 3 · MAAK JE VERGELIJKING')
@@ -40,10 +44,7 @@ with st.sidebar:
     minimum=st.slider('Minimaal aantal bewegingen per weerdag',1,200,20,key='filter_minimum')
     st.caption('Jaren, maanden, richting, gebied en landen gelden voor Overzicht, Verkeer, Landenkaart, Luchthavens en Vertraging & weer. Tijdsindeling geldt voor de tijdgrafieken.')
     st.caption('Het voorspelmodel en de dataverantwoording gebruiken de vaste Zürich-bron. De vluchtprofielen gaan apart over Amsterdam–Barcelona.')
-    if st.button('Herstel filters'):
-        for key in ['filter_years','filter_months','filter_direction','filter_region','filter_countries','filter_aggregation','filter_minimum']:
-            st.session_state.pop(key,None)
-        st.rerun()
+    st.button('Herstel filters',on_click=reset_filters)
     st.divider()
     st.markdown('[GitHub · code en bronnen](https://github.com/Hugohilbelink/Minor_data_science_case_3_flights)')
 
