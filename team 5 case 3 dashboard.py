@@ -1,13 +1,11 @@
 """Case 3 Zürich Airport. Start met: streamlit run \"team 5 case 3 dashboard.py\"."""
 from pathlib import Path
-import pycountry
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from data_pipeline import load_data, daily_series, load_profile, profile_inventory
-from modeling import train_models
 
 st.set_page_config(page_title='Case 3 · Zürich Airport',page_icon='✈️',layout='wide')
 BLUE='#2563eb';TEAL='#087f8c';ORANGE='#d97706';INK='#142d4e'
@@ -220,6 +218,7 @@ def render_weather():
 
 
 def render_forecast():
+    from modeling import train_models
     heading('ZRH / 05 · TOETSEN','Hoeveel vertraging verwachten we morgen?','Een historische één-dag-vooruit toets voor de gemiddelde positieve vertrekvertraging per dag. Elke voorspelling gebruikt alleen kalenderinformatie en waarnemingen tot en met gisteren.')
     with st.spinner('Baselines en modellen chronologisch toetsen…'):result=train_models()
     st.info(f"Geselecteerd op september–oktober 2019: {result['best']}. Trainingsperiode: 8 januari–31 augustus 2019 ({result['n_train']} dagen). De testmaanden november–december 2019 zijn niet gebruikt voor de modelkeuze.")
@@ -334,8 +333,8 @@ def render_present():
 |---|---|---|
 | 0:00–0:45 | Overzicht | Stel de groep voor. Vraag het publiek: zou minder verkeer automatisch minder vertraging betekenen? Leg de hoofdvraag uit. |
 | 0:45–2:00 | Overzicht → tijd | Wijs de breuk in voorjaar 2020 aan. Vergelijk dezelfde maanden, aankomst en vertrek; verklaar aantallen, aggregatie en gaten. |
-| 2:00–3:00 | Data & verantwoording | Laat ICAO-koppeling en tijdcorrectie zien. Geef één verwijderde én één behouden uitschieter met reden. Wijs de sensitiviteitstabel aan. |
-| 3:00–4:15 | Bestemmingen | Begin met Europa. Wijs het drukste punt aan, selecteer een land en verdiep één route. Leg de log-kleurlegenda uit. |
+| 2:00–3:00 | Data & methode | Laat ICAO-koppeling en tijdcorrectie zien. Geef één verwijderde én één behouden uitschieter met reden. Wijs de sensitiviteitstabel aan. |
+| 3:00–4:15 | Landenkaart ? Luchthavens | Kies 2019 en Europa in de zijbalk. Wijs het drukste punt aan, selecteer een land en verdiep één route. Leg de log-kleurlegenda uit. |
 | 4:15–5:45 | Vertraging & weer | Toon regen tegen vertraging, vergelijk binnen één jaar. Geef aantallen dagen en benoem seizoen/drukte als alternatieve verklaring. |
 | 5:45–8:00 | Voorspelling | Leg doel en alleen historische invoer uit. Laat train/validatie/test zien, wijs een misser aan, vergelijk baseline en model. Toon daarna de stresstest 2020. |
 | 8:00–8:45 | Vluchtprofielen | Toon hoogte langs het traject. Benoem dat dit Amsterdam–Barcelona is en dat de fijne meetstap 0,25 seconde is. |
@@ -359,6 +358,7 @@ def render_present():
 ''')
 
 def render_countries():
+    import pycountry
     heading('ZRH / LANDEN','Met welke landen is Zürich verbonden?','Het luchthavenbestand bevat landen en coördinaten. Het verkeer per land ontstaat door die bron op ICAO aan het rooster te koppelen.')
     known=d[d.country.notna()]
     g=known.groupby('country',observed=True).agg(Bewegingen=('FLT','size'),Luchthavens=('icao','nunique'),Vertraging=('delay','mean'),Laat=('late15','mean')).reset_index()
