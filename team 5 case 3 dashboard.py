@@ -362,7 +362,7 @@ def render_countries():
     heading('ZRH / LANDEN','Met welke landen is Zürich verbonden?','Het luchthavenbestand bevat landen en coördinaten. Het verkeer per land ontstaat door die bron op ICAO aan het rooster te koppelen.')
     known=d[d.country.notna()]
     g=known.groupby('country',observed=True).agg(Bewegingen=('FLT','size'),Luchthavens=('icao','nunique'),Vertraging=('delay','mean'),Laat=('late15','mean')).reset_index()
-    aliases={'Russia':'Russian Federation','South Korea':'Korea, Republic of','North Korea':"Korea, Democratic People's Republic of",'Iran':'Iran, Islamic Republic of','Vietnam':'Viet Nam','Taiwan':'Taiwan, Province of China','Congo (Brazzaville)':'Congo','Congo (Kinshasa)':'Congo, The Democratic Republic of the','Laos':"Lao People's Democratic Republic",'Ivory Coast':"Côte d'Ivoire",'Burma':'Myanmar','Palestine':'Palestine, State of','Macau':'Macao','Cape Verde':'Cabo Verde'}
+    aliases={'Turkey':'TUR','Macedonia':'MKD','Russia':'Russian Federation','South Korea':'Korea, Republic of','North Korea':"Korea, Democratic People's Republic of",'Iran':'Iran, Islamic Republic of','Vietnam':'Viet Nam','Taiwan':'Taiwan, Province of China','Congo (Brazzaville)':'Congo','Congo (Kinshasa)':'Congo, The Democratic Republic of the','Laos':"Lao People's Democratic Republic",'Ivory Coast':"Côte d'Ivoire",'Burma':'Myanmar','Palestine':'Palestine, State of','Macau':'Macao','Cape Verde':'Cabo Verde'}
     def iso(name):
         try:return pycountry.countries.lookup(aliases.get(name,name)).alpha_3
         except LookupError:return None
@@ -374,7 +374,7 @@ def render_countries():
     focus=st.selectbox('Zoom naar land',['Alle geselecteerde landen']+mapped.sort_values('Bewegingen',ascending=False).country.astype(str).tolist())
     shown=mapped if focus=='Alle geselecteerde landen' else mapped[mapped.country.eq(focus)]
     fig=px.choropleth(shown,locations='iso',color='log_count',hover_name='country',color_continuous_scale='Blues',hover_data={'Bewegingen':True,'Luchthavens':True,'Vertraging':':.1f','Laat':':.1%','iso':False,'log_count':False},labels={'Vertraging':'Gemiddelde vertraging (min)','Laat':'≥15 min vertraagd'},title=f'{len(shown)} landen · {number(shown.Bewegingen.sum())} bewegingen')
-    fig.update_geos(projection_type='mercator',showcoastlines=True,showland=True,landcolor='#edf1f5',showcountries=True,countrycolor='#ffffff',showocean=True,oceancolor='#e8f1fa')
+    fig.update_geos(projection_type='natural earth',showcoastlines=True,showland=True,landcolor='#edf1f5',showcountries=True,countrycolor='#ffffff',showocean=True,oceancolor='#e8f1fa')
     if focus!='Alle geselecteerde landen' or global_region=='Europa':fig.update_geos(fitbounds='locations',visible=True)
     fig.update_layout(height=540,coloraxis_colorbar=dict(title='Bewegingen (log)',tickvals=np.log10(ticks),ticktext=[number(t) for t in ticks]))
     chart(fig,key='landenkaart')
@@ -383,7 +383,7 @@ def render_countries():
     st.caption('Scroll of gebruik de zoomknoppen om in te zoomen; sleep om te verplaatsen. Hover toont het land, volume, aantal luchthavens en vertraging. Blauw loopt op via een logaritmische schaal. Grijs betekent geen getekende waarde, niet bewezen nul verkeer. Dit zijn verbindingen met Zürich, geen nationale luchtvaarttotalen.')
     omitted=int(d.country.isna().sum())+int(g.loc[g.iso.isna(),'Bewegingen'].sum())
     if omitted:st.caption(f'{number(omitted)} bewegingen hebben geen gekoppeld land of herkenbare landcode en staan niet op de landenkaart; ze blijven meetellen in de selectie.')
-    st.dataframe(g.drop(columns='iso').sort_values('Bewegingen',ascending=False),width='stretch',hide_index=True)
+    st.dataframe(g.drop(columns='iso').rename(columns={'country':'Land','Vertraging':'Vertraging (min)','Laat':'Minstens 15 min (%)'}).sort_values('Bewegingen',ascending=False).style.format({'Vertraging (min)':'{:.1f}','Minstens 15 min (%)':'{:.1%}'}),width='stretch',hide_index=True)
     download(g.drop(columns='iso'),'landen.csv')
     st.caption('Open Luchthavens voor de afzonderlijke vliegvelden binnen dezelfde selectie. Landgrenzen: Plotly / Natural Earth; landcodes: ISO via pycountry.')
 
