@@ -25,14 +25,18 @@ def haversine(lat, lon, lat0=47.4647, lon0=8.54917):
     h=np.sin((rlat-rlat0)/2)**2+np.cos(rlat)*np.cos(rlat0)*np.sin((rlon-rlon0)/2)**2
     return 6371*2*np.arcsin(np.sqrt(np.clip(h,0,1)))
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False, max_entries=1)
 def load_data():
+    """Eén gedeelde, vaste bron. Consumers mogen de teruggegeven frames niet wijzigen."""
     with ZipFile(ROOT/'data_sources.zip') as z:
-        raw=pd.read_csv(z.open('schedule_airport.csv'))
+        # Herhaalde codes/tijden zijn categorieën, geen honderdduizenden losse strings.
+        raw=pd.read_csv(z.open('schedule_airport.csv'), dtype='category')
         air_raw=pd.read_csv(z.open('airports-extended.csv'),header=None,names=AIR_COLUMNS,na_values='\\N')
         weather_raw=pd.read_csv(z.open('06670.csv'),header=None,names=WEATHER_COLUMNS)
-    d=raw.drop_duplicates().copy()
-    d['date']=pd.to_datetime(d.STD,format='%d/%m/%Y',errors='coerce')
+    # Alleen analysevelden meenemen. Gates/codes blijven in bron en bronvoorbeeld.
+    columns=['STD','FLT','LSV','STA_STD_ltc','ATA_ATD_ltc','Org/Des','ACT','RWY']
+    d=raw.drop_duplicates()[columns].copy()
+    d['date']=pd.to_datetime(d.STD.astype('string'),format='%d/%m/%Y',errors='coerce')
     d['raw_delay'],d['clock_delay']=clock_delay(d.STA_STD_ltc,d.ATA_ATD_ltc)
     d['day_shift']=(d.raw_delay-d.clock_delay).abs()>1
     d['delay']=d.clock_delay.where(d.clock_delay.ge(-120))
@@ -43,7 +47,7 @@ def load_data():
     d['year']=d.date.dt.year
     d['hour']=pd.to_timedelta(d.STA_STD_ltc).dt.components.hours
     d['scheduled_hour_count']=d.groupby(['date','hour']).FLT.transform('size')
-    d['icao']=d['Org/Des'].astype('string').str.strip().str.upper()
+    d['icao']=d['Org/Des'].astype('string').str.strip().str.upper().astype('category')
     air=air_raw.loc[air_raw.type.eq('airport') & air_raw.icao.notna()].copy()
     for c in ['lat','lon']:
         air[c]=pd.to_numeric(air[c],errors='coerce')
@@ -87,21 +91,33 @@ def load_data():
         ['Weer','Onmogelijke meetwaarden',sum(invalid_weather.values()),'Op ontbrekend, geen verzonnen nul'],
     ],columns=['Bron','Controle','Aantal','Keuze'])
     missing=pd.concat([
-        raw.replace('-',np.nan).isna().mean().mul(100).rename('Ontbrekend (%)').rename_axis('Veld').reset_index().assign(Bron='Rooster'),
+        pd.Series({c:(raw[c].isna()|raw[c].eq('-')).mean()*100 for c in raw},name='Ontbrekend (%)').rename_axis('Veld').reset_index().assign(Bron='Rooster'),
         air_raw.isna().mean().mul(100).rename('Ontbrekend (%)').rename_axis('Veld').reset_index().assign(Bron='Luchthavens'),
         w.loc[w.date.between('2019-01-01','2020-12-31')].isna().mean().mul(100).rename('Ontbrekend (%)').rename_axis('Veld').reset_index().assign(Bron='Weer 2019–2020')])
-    meta={'raw_rows':len(raw),'clean_rows':len(d),'air_rows':len(air_raw),'weather_rows':len(weather_raw),'unmatched':unmatched,'audit':audit,'missing':missing,'raw_sample':raw.head(50),'air_sample':air_raw.head(30),'weather_sample':weather_raw.head(30)}
+    meta={'raw_rows':len(raw),'clean_rows':len(d),'air_rows':len(air_raw),'weather_rows':len(weather_raw),'unmatched':unmatched,'audit':audit,'missing':missing,'raw_sample':raw.head(50).astype(object),'air_sample':air_raw.head(30),'weather_sample':weather_raw.head(30)}
+    # Categorieën voor labels; float32 volstaat voor meetwaarden, minuten en afstand.
+    for c in d.select_dtypes(include=['object','string']).columns:
+        d[c]=d[c].astype('category')
+    for c in d.select_dtypes(include='float').columns:
+        if c in ['delay','positive_delay','clock_delay','raw_delay']: continue
+        d[c]=pd.to_numeric(d[c],downcast='float')
+    for c in d.select_dtypes(include='integer').columns:
+        d[c]=pd.to_numeric(d[c],downcast='integer')
+    meta['analysis_bytes']=int(d.memory_usage(deep=True).sum())
     return d,w,meta
 
 def daily_series(d,full_dates=None):
     if full_dates is None: full_dates=pd.date_range('2019-01-01','2020-12-31')
-    g=d.groupby(['date','direction']).agg(count=('FLT','size'),delay=('delay','mean'),late15=('late15','mean'))
+    g=d.groupby(['date','direction'],observed=True).agg(count=('FLT','size'),delay=('delay','mean'),late15=('late15','mean'))
     idx=pd.MultiIndex.from_product([full_dates,['Aankomst','Vertrek']],names=['date','direction'])
     # Ontbrekende observaties blijven NaN; geen verzonnen nul of verbindingslijn.
     return g.reindex(idx).reset_index()
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=2)
 def load_profile(flight, resolution):
+    return _read_profile(flight, resolution)
+
+def _read_profile(flight, resolution):
     folder='1 seconde csv bestanden' if resolution=='Fijn' else '30 seconden csv bestanden'
     prefix='1' if resolution=='Fijn' else '30'
     name=f'{folder}/{prefix}Flight {flight}.xlsx'
@@ -122,11 +138,13 @@ def load_profile(flight, resolution):
     meta={'bestand':name,'ruwe_rijen':len(raw),'rijen':len(d),'dubbel':int(raw.duplicated().sum()),'interval':float(d.seconds.diff().median()),'ongeldige_coordinaten':int(invalid.sum()),'ontbrekende_coordinaten':int(missing.sum()),'niet_numeriek':nonnumeric,'ontbrekend':d.isna().sum().to_dict()}
     return d,meta
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=1)
 def profile_inventory():
     rows=[]
     for flight in range(1,8):
         for res in ['Fijn','30 seconden']:
-            d,m=load_profile(flight,res)
+            # Geen veertien volledige frames in de profielcache bewaren.
+            d,m=_read_profile(flight,res)
             rows.append({'Vlucht':flight,'Resolutie':res,'Rijen':len(d),'Stap (s)':m['interval'],'Duur (min)':(d.seconds.max()-d.seconds.min())/60,'Max hoogte (m)':d.altitude_m.max(),'Snelheid ontbreekt (%)':d.airspeed.isna().mean()*100,'Snelheid tekstwaarden':m['niet_numeriek']['airspeed'],'Duplicaten':m['dubbel'],'Ongeldige coördinaten':m['ongeldige_coordinaten'],'Ontbrekende coördinaten':m['ontbrekende_coordinaten']})
+            del d
     return pd.DataFrame(rows)

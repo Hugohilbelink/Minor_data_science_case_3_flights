@@ -1,11 +1,10 @@
-"""Case 3: Zürich Airport. Start met: streamlit run \"team 5 case 3 dashboard.py\"."""
+"""Case 3 Zürich Airport. Start met: streamlit run \"team 5 case 3 dashboard.py\"."""
 from pathlib import Path
-import json
+import pycountry
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import streamlit as st
 from data_pipeline import load_data, daily_series, load_profile, profile_inventory
 from modeling import train_models
@@ -22,24 +21,46 @@ h1,h2,h3{letter-spacing:-.035em} [data-testid="stMetric"]{background:white;borde
 [data-testid="stMetricLabel"]{color:#526780} .eyebrow{font-size:.8rem;letter-spacing:.14em;color:#087f8c;font-weight:700}
 .hero{background:#142d4e;color:white;padding:25px 30px;border-radius:18px;margin:8px 0 22px}
 .hero h2{color:white;margin:0;font-size:2rem}.hero p{color:#d8e6f6;margin-bottom:0;max-width:900px}
+[data-baseweb="tab-list"]{gap:.4rem}
+[data-baseweb="tab"]{padding:.5rem .45rem;font-size:.85rem}
 </style>''',unsafe_allow_html=True)
 
 with st.spinner('De bronnen koppelen en controleren…'):
-    d,w,meta=load_data()
+    all_d,w,meta=load_data()
 
-PAGES=['Overzicht','Verkeer door de tijd','Bestemmingen','Vertraging & weer','Voorspelling','Vluchtprofielen','Data & verantwoording','Presenteren']
+PAGES=['Overzicht','Verkeer','Landenkaart','Luchthavens','Vertraging & weer','Voorspelling','Vluchtprofielen','Data & methode','Presenteren']
 with st.sidebar:
     st.markdown('## ✈ Zürich Airport')
-    st.caption('CASE 3 · VAN DATA NAAR INFORMATIE')
-    page=st.radio('Ga naar',PAGES,label_visibility='collapsed')
+    st.caption('CASE 3 · MAAK JE VERGELIJKING')
+    years=st.multiselect('Jaren',[2019,2020],default=[2019,2020],key='filter_years')
+    months=st.slider('Maanden in beide jaren',1,12,(1,12),key='filter_months')
+    global_direction=st.selectbox('Richting',['Beide','Aankomst','Vertrek'],key='filter_direction')
+    global_region=st.selectbox('Gebied',['Wereld','Europa','Buiten Europa'],key='filter_region')
+    options=all_d if global_region=='Wereld' else all_d[all_d.region.eq(global_region)]
+    global_countries=st.multiselect('Landen',sorted(options.country.dropna().unique()),key='filter_countries',help='Leeg betekent alle landen in het gekozen gebied.')
+    aggregation=st.selectbox('Tijdsindeling',['Maand','Week','Dag'],key='filter_aggregation')
+    minimum=st.slider('Minimaal aantal bewegingen per weerdag',1,200,20,key='filter_minimum')
+    st.caption('Jaren, maanden, richting, gebied en landen gelden voor Overzicht, Verkeer, Landenkaart, Luchthavens en Vertraging & weer. Tijdsindeling geldt voor de tijdgrafieken.')
+    st.caption('Het voorspelmodel en de dataverantwoording gebruiken de vaste Zürich-bron. De vluchtprofielen gaan apart over Amsterdam–Barcelona.')
+    if st.button('Herstel filters'):
+        for key in ['filter_years','filter_months','filter_direction','filter_region','filter_countries','filter_aggregation','filter_minimum']:
+            st.session_state.pop(key,None)
+        st.rerun()
     st.divider()
-    st.caption('Zürich · 2019–2020\n\n323.461 geregistreerde vliegbewegingen. Profielen: Amsterdam–Barcelona, apart onderzocht.')
     st.markdown('[GitHub · code en bronnen](https://github.com/Hugohilbelink/Minor_data_science_case_3_flights)')
+
+mask=all_d.year.isin(years)&all_d.date.dt.month.between(*months)
+if global_direction!='Beide':mask &= all_d.direction.eq(global_direction)
+if global_region!='Wereld':mask &= all_d.region.eq(global_region)
+if global_countries:mask &= all_d.country.isin(global_countries)
+d=all_d if mask.all() else all_d.loc[mask]
+country_label=', '.join(global_countries) if global_countries else 'alle landen'
+st.caption(f"SELECTIE · {', '.join(map(str,years)) or 'geen jaar'} · maanden {months[0]}–{months[1]} · {global_direction.lower()} · {global_region} · {country_label} · {len(d):,} bewegingen")
 
 def chart(fig,key=None):
     fig.update_layout(font=dict(family='Arial',color=INK,size=13),margin=dict(l=12,r=20,t=65,b=30),paper_bgcolor='rgba(0,0,0,0)',legend_title_text='',hovermode='closest')
     fig.update_traces(connectgaps=False,selector=dict(type='scatter'))
-    st.plotly_chart(fig,width='stretch',key=key,config={'displaylogo':False,'scrollZoom':False})
+    st.plotly_chart(fig,width='stretch',key=key,config={'displaylogo':False,'scrollZoom':True})
 
 def number(x):return f'{x:,.0f}'.replace(',','.')
 def heading(kicker,title,text):
@@ -51,21 +72,27 @@ def year_filter(key):
     return st.selectbox('Jaar',['2019','2020','2019 + 2020'],key=key)
 def filter_year(frame,year):return frame if year=='2019 + 2020' else frame[frame.year.eq(int(year))]
 
-if page=='Overzicht':
-    counts=d.groupby('year').size();drop=(counts[2020]/counts[2019]-1)*100
+def render_overview():
+    counts=d.groupby('year',observed=True).size().reindex([2019,2020])
+    comparable=counts.notna().all() and counts[2019]>0
+    drop=(counts[2020]/counts[2019]-1)*100 if comparable else np.nan
     heading('ZRH / 01 · HET VERHAAL','Minder verkeer. Ook minder vertraging?','Wat veranderde tussen 2019 en 2020, welke rol spelen bestemming en weer, en hoe goed kunnen we de vertraging van morgen inschatten?')
-    st.markdown(f'<div class="hero"><h2>{abs(drop):.1f}% minder vliegbewegingen in 2020</h2><p>Een grote verandering in verkeer hoeft niet hetzelfde te betekenen voor elke route of elke dag. We koppelen het rooster aan luchthavens en lokaal weer om dat te onderzoeken.</p></div>',unsafe_allow_html=True)
+    headline=f'{abs(drop):.1f}% {"minder" if drop<0 else "meer"} bewegingen in 2020' if comparable else f'{number(len(d))} bewegingen in de selectie'
+    st.markdown(f'<div class="hero"><h2>{headline}</h2><p>De filters links veranderen de cijfers en grafieken op de analysetabs. Vergelijk dezelfde maanden in beide jaren.</p></div>',unsafe_allow_html=True)
     c=st.columns(4)
     out=d[d.direction.eq('Vertrek')]
-    p=out.groupby('year').late15.mean()*100
-    c[0].metric('Vliegbewegingen 2019',number(counts[2019]));c[1].metric('Vliegbewegingen 2020',number(counts[2020]))
-    c[2].metric('Vertrek ≥15 min te laat · 2019',f'{p[2019]:.1f}%');c[3].metric('Vertrek ≥15 min te laat · 2020',f'{p[2020]:.1f}%',f'{p[2020]-p[2019]:+.1f} procentpunt',delta_color='inverse')
-    m=d.groupby([d.date.dt.to_period('M'),'direction']).size().rename('Vliegbewegingen').reset_index();m['date']=m.date.dt.to_timestamp()
-    fig=px.line(m,x='date',y='Vliegbewegingen',color='direction',color_discrete_map=COLORS,markers=True,title='Vanaf maart 2020 valt het verkeer sterk terug',labels={'date':'Maand','direction':'Richting'})
+    p=(out.groupby('year',observed=True).late15.mean()*100).reindex([2019,2020])
+    for i,yr in enumerate([2019,2020]):
+        c[i].metric(f'Vliegbewegingen {yr}',number(counts[yr]) if pd.notna(counts[yr]) else 'Geen selectie')
+        c[i+2].metric(f'Vertrek ≥15 min te laat · {yr}',f'{p[yr]:.1f}%' if pd.notna(p[yr]) else 'Geen vertrekken')
+    if p.notna().all():st.caption(f'Verandering aandeel late vertrekken: {p[2020]-p[2019]:+.1f} procentpunt.')
+    freq={'Dag':'D','Week':'W-MON','Maand':'MS'}[aggregation]
+    m=d.groupby([pd.Grouper(key='date',freq=freq),'direction'],observed=True).size().rename('Vliegbewegingen').reset_index()
+    fig=px.line(m,x='date',y='Vliegbewegingen',color='direction',color_discrete_map=COLORS,markers=True,title=f'Verkeer per {aggregation.lower()} binnen de selectie',labels={'date':aggregation,'direction':'Richting'})
     fig.update_yaxes(rangemode='tozero');fig.add_vline(x=pd.Timestamp('2020-03-01').timestamp()*1000,line_dash='dot',line_color=ORANGE)
     fig.add_annotation(x=pd.Timestamp('2020-04-01'),y=float(m.Vliegbewegingen.min()),text='Voorjaar 2020: breuk in de reeks',showarrow=True,ay=-70,ax=100)
     chart(fig)
-    st.caption('Maandtotalen, uitgesplitst naar aankomst en vertrek. Het rooster bevat geregistreerde bewegingen, geen volledige lijst van annuleringen. De tijdsbreuk past bij het coronajaar uit de opdracht; deze data bewijst op zichzelf geen oorzaak.')
+    st.caption('Totalen per gekozen tijdseenheid, uitgesplitst naar aankomst en vertrek. Het rooster bevat geregistreerde bewegingen, geen volledige lijst van annuleringen. De tijdsbreuk past bij het coronajaar uit de opdracht; deze data bewijst op zichzelf geen oorzaak.')
     a,b=st.columns(2)
     with a:
         st.subheader('1 · Waar veranderde het netwerk?');st.write('Vergelijk dezelfde maanden, bekijk drukke en rustige periodes en zoom daarna in op een regio of luchthaven.')
@@ -75,15 +102,17 @@ if page=='Overzicht':
         st.write('Eén rij = één aankomst of vertrek. Vertraging = werkelijke lokale kloktijd minus geplande kloktijd, met een expliciete daggrensaanname. Te vroeg is negatief. ≥15 minuten is onze vaste grens voor vertraagd. Ontbrekende of verdachte vertragingen tellen niet mee in het percentage; de beweging blijft in het verkeersvolume.')
         st.write('De eerste laag bevat alleen de hoofdvraag, vier kerncijfers en één tijdgrafiek. Gates, ruwe codes, 295 losse routes en modeldetails zijn bewust naar een tweede laag verplaatst. Daar beantwoorden ze de vervolgvraag zonder het overzicht te overbelasten.')
 
-elif page=='Verkeer door de tijd':
+
+def render_traffic():
     heading('ZRH / 02 · VERKEER','Leg drukke en rustige periodes naast elkaar','Vergelijk aankomst en vertrek op een echte tijdas, of leg dezelfde kalendermaanden van 2019 en 2020 over elkaar.')
-    a,b,c=st.columns([2,1,1])
+    a,b=st.columns(2)
     mode=a.selectbox('Vergelijking',['Doorlopende tijdas','2019 tegenover 2020'])
-    unit=b.selectbox('Aggregatie',['Week','Dag','Maand'])
-    metric=c.selectbox('Grootheid',['Vliegbewegingen','Gemiddelde vertraging'])
+    unit=aggregation
+    metric=b.selectbox('Grootheid',['Vliegbewegingen','Gemiddelde vertraging'])
     dest=st.selectbox('Herkomst / bestemming',['Alle']+sorted(d.icao.dropna().unique().tolist()))
     sub=d if dest=='Alle' else d[d.icao.eq(dest)]
-    dates=pd.date_range('2019-01-01','2020-12-31')
+    dates=pd.date_range(d.date.min(),d.date.max())
+    dates=dates[dates.year.isin(years)&pd.Series(dates.month).between(*months).to_numpy()]
     ts=daily_series(sub,dates)
     freq={'Dag':'D','Week':'W-MON','Maand':'MS'}[unit]
     if unit!='Dag':
@@ -111,7 +140,6 @@ elif page=='Verkeer door de tijd':
         fig=px.line(ts,x='date',y=col,color='direction',color_discrete_map=COLORS,labels={'date':'Datum',col:ylabel},title=f'{metric} per {unit.lower()} · {dest}')
         fig.update_xaxes(rangeslider_visible=True)
     else:
-        months=st.slider('Dezelfde maanden in beide jaren',1,12,(1,12))
         ts=ts[ts.date.dt.month.between(*months)].copy();ts['Jaar']=ts.date.dt.year.astype(str)
         ts=ts[ts.date.dt.year.isin([2019,2020])]
         ts['Kalender']=pd.to_datetime('2000-'+ts.date.dt.strftime('%m-%d'))
@@ -123,18 +151,16 @@ elif page=='Verkeer door de tijd':
     daily=sub.groupby('date').size()
     if len(daily):
         a,b=st.columns(2);a.metric('Drukste geregistreerde dag',daily.idxmax().strftime('%d-%m-%Y'),f'{daily.max()} bewegingen',delta_color='off');b.metric('Rustigste geregistreerde dag',daily.idxmin().strftime('%d-%m-%Y'),f'{daily.min()} bewegingen',delta_color='off')
-        st.caption('Deze twee dagen gebruiken de hele 2019–2020-reeks binnen de gekozen bestemming, los van de zoom.')
+        st.caption('Deze dagen gebruiken de selectie uit de zijbalk en het routefilter, los van de zoom in de tijdgrafiek.')
     with st.expander('Tabel achter de grafiek'):st.dataframe(ts,width='stretch');download(ts,'tijdreeks.csv')
 
-elif page=='Bestemmingen':
+
+def render_airports():
     heading('ZRH / 03 · NETWERK','Welke bestemmingen dragen het verkeer?','De koppeling op ICAO maakt van het rooster een geografisch netwerk. Kies eerst een gebied; aantallen bepalen de kleur.')
-    a,b,c=st.columns(3);year=a.selectbox('Jaar',['2019','2020','2019 + 2020'],key='mapyear');region=b.selectbox('Gebied',['Europa','Buiten Europa','Wereld']);direct=c.selectbox('Richting',['Beide','Aankomst','Vertrek'])
-    sub=filter_year(d,year)
-    if direct!='Beide':sub=sub[sub.direction.eq(direct)]
+    sub=d
+    region=global_region
     mapped=sub[sub.lat.notna()].copy()
     if region!='Wereld':mapped=mapped[mapped.region.eq(region)]
-    countries=st.multiselect('Landen (leeg = alle landen in het gekozen gebied)',sorted(mapped.country.dropna().unique()))
-    if countries:mapped=mapped[mapped.country.isin(countries)]
     g=mapped.groupby(['icao','airport_name','city','country','lat','lon'],dropna=False).agg(Vliegbewegingen=('FLT','size'),Vertraging=('delay','mean'),Afstand=('distance_km','first')).reset_index()
     if g.empty:st.info('Deze selectie bevat geen luchthavens. Kies een ander gebied of land.');st.stop()
     g['log_count']=np.log10(g.Vliegbewegingen)
@@ -150,13 +176,14 @@ elif page=='Bestemmingen':
     route=d[d.icao.eq(choice)]
     comp=route.groupby('year').agg(Bewegingen=('FLT','size'),Gemiddelde_vertraging_min=('delay','mean'),Aandeel_15min=('late15','mean')).reindex([2019,2020])
     st.subheader(f'{choice} · hoe veranderde deze verbinding?');st.dataframe(comp.style.format({'Bewegingen':'{:,.0f}','Gemiddelde_vertraging_min':'{:.1f}','Aandeel_15min':'{:.1%}'}),width='stretch')
-    st.caption('De verdieping vergelijkt bewust beide volledige jaren en beide richtingen, ongeacht de kaartfilters. Ontbrekend betekent geen geregistreerde rij, niet automatisch een bevestigde annulering.')
+    st.caption('De verdieping volgt de filters links en vergelijkt de geselecteerde maanden en richtingen per jaar. Ontbrekend betekent geen geregistreerde rij, niet automatisch een bevestigde annulering.')
     with st.expander('Bestemmingen en rechte-lijnafstanden'):st.dataframe(g.drop(columns='log_count').sort_values('Vliegbewegingen',ascending=False),width='stretch');download(g.drop(columns='log_count'),'bestemmingen.csv');st.caption('Afstand = haversine op een bol (straal 6.371 km), geen werkelijk gevlogen route.')
 
-elif page=='Vertraging & weer':
+
+def render_weather():
     heading('ZRH / 04 · VERKLAREN','Meer regen, meer vertraging?','Het rooster alleen kent het weer niet. Door beide op lokale kalenderdatum te koppelen kunnen we dagen vergelijken, zonder samenhang als oorzaak te presenteren.')
-    a,b,c=st.columns(3);year=a.selectbox('Jaar',['2019','2020','2019 + 2020'],key='weatheryear');direction=b.selectbox('Richting',['Vertrek','Aankomst']);minimum=c.slider('Minimaal aantal bewegingen per dag',1,200,20)
-    sub=filter_year(d,year);sub=sub[sub.direction.eq(direction)]
+    direction=st.selectbox('Analyseer vertraging van',['Vertrek','Aankomst']) if global_direction=='Beide' else global_direction
+    sub=d[d.direction.eq(direction)]
     daily=sub.groupby('date').agg(bewegingen=('FLT','size'),vertraging=('positive_delay','mean'),laat=('late15','mean'),jaar=('year','first'),regen=('prcp','first'),wind=('wspd','first'),temperatuur=('tavg','first'))
     daily=daily[daily.bewegingen>=minimum].reset_index();daily['Jaar']=daily.jaar.astype(str)
     variable=st.selectbox('Weervariabele',['Neerslag (mm)','Wind (km/h)','Temperatuur (°C)']);col={'Neerslag (mm)':'regen','Wind (km/h)':'wind','Temperatuur (°C)':'temperatuur'}[variable]
@@ -186,14 +213,17 @@ elif page=='Vertraging & weer':
     with st.expander('Verdeling, uitschieters en export'):
         zoom=st.checkbox('Zoom op -60 tot +180 minuten',True)
         hist=sub[sub.delay.between(-60,180)] if zoom else sub[sub.delay.notna()]
-        chart(px.histogram(hist,x='delay',nbins=60,labels={'delay':'Vertraging (min)'},title='De lange rechterstaart maakt het gemiddelde gevoelig'))
+        counts,edges=np.histogram(hist.delay.to_numpy(),bins=60)
+        chart(px.bar(x=(edges[:-1]+edges[1:])/2,y=counts,labels={'x':'Vertraging (min)','y':'Bewegingen'},title='De lange rechterstaart maakt het gemiddelde gevoelig'))
         st.caption(f'{len(hist):,} van {sub.delay.notna().sum():,} geldige vertragingen zichtbaar. Zoom verandert alleen deze verdelingsgrafiek, niet de cijfers erboven.')
         download(daily,'vertraging_en_weer.csv')
 
-elif page=='Voorspelling':
+
+def render_forecast():
     heading('ZRH / 05 · TOETSEN','Hoeveel vertraging verwachten we morgen?','Een historische één-dag-vooruit toets voor de gemiddelde positieve vertrekvertraging per dag. Elke voorspelling gebruikt alleen kalenderinformatie en waarnemingen tot en met gisteren.')
-    with st.spinner('Baselines en modellen chronologisch toetsen…'):result=train_models(d,w)
+    with st.spinner('Baselines en modellen chronologisch toetsen…'):result=train_models()
     st.info(f"Geselecteerd op september–oktober 2019: {result['best']}. Trainingsperiode: 8 januari–31 augustus 2019 ({result['n_train']} dagen). De testmaanden november–december 2019 zijn niet gebruikt voor de modelkeuze.")
+    st.caption('Vaste toets op alle Zürich-vertrekken. Landen-, richting- en maandfilters veranderen dit model niet, zodat de onafhankelijke test en de vergelijking controleerbaar blijven.')
     period=st.selectbox('Toetsperiode',['Test 2019','Stresstest 2020'])
     pred=result['predictions'];test=pred[pred.period.eq(period)].copy()
     mae=np.abs(test.error).mean();cover=test.covered.mean()*100
@@ -223,7 +253,8 @@ elif page=='Voorspelling':
         st.caption('Permutatiebelang voor het vaste Ridge + weer-model op de 2019-test: toename in MAE na willekeurig verwisselen van een invoerkolom (10 herhalingen). Negatief = geen bewezen nut. Gecorreleerde variabelen verdelen hun belang; dit bewijst geen oorzaak en is niet gebruikt voor modelkeuze.')
     st.warning('Wat breekt de voorspelling? Een lockdown, staking, nieuw baangebruik of extreme weersituatie kan de historische relatie veranderen. 2020 is daarom apart getoetst. De reeks eindigt in 2020: dit dashboard doet geen actuele voorspelling voor 2026 en voorspelt ook geen individuele vlucht.')
 
-elif page=='Vluchtprofielen':
+
+def render_profiles():
     heading('AMS → BCN / VERDIEPING','Zeven vluchten van dichtbij','Deze bestanden beschrijven Amsterdam–Barcelona. Ze staan los van het Zürich-rooster en worden nooit op vluchtnummer of datum daaraan vastgeknoopt.')
     a,b,c=st.columns(3);flight=a.selectbox('Vlucht',list(range(1,8)));resolution=b.selectbox('Bronresolutie',['30 seconden','Fijn']);variable=c.selectbox('Meetwaarde',['Hoogte (m)','Koers (°)','Snelheid (broneenheid)'])
     p,pm=load_profile(flight,resolution)
@@ -250,14 +281,18 @@ elif page=='Vluchtprofielen':
     route=sub.iloc[::max(1,int(np.ceil(len(sub)/1500)))].dropna(subset=['lat','lon'])
     if len(route):
         fig=px.scatter_map(route,lat='lat',lon='lon',color='altitude_m',color_continuous_scale='Viridis',hover_data={'minutes':':.1f','altitude_m':':.0f','lat':':.4f','lon':':.4f'},map_style='carto-positron',zoom=4,center={'lat':float(route.lat.mean()),'lon':float(route.lon.mean())},labels={'altitude_m':'Hoogte (m)'},title='Positie en hoogte langs het gemeten traject');fig.update_layout(height=420);chart(fig)
-    with st.expander('Vergelijk fijne en grove meting voor alle zeven vluchten'):
-        with st.spinner('Alle 14 profielbestanden inspecteren…'):inv=profile_inventory()
-        st.dataframe(inv,width='stretch',hide_index=True)
-        st.write('Duur is tijd tussen eerste en laatste registratiemoment, niet gegarandeerd vliegtijd tussen opstijgen en landen. Een grovere meting kan kortdurende pieken missen; vergelijk daarom de maximale hoogte en de dekking. Dit zijn zeven voorbeelden, geen representatieve steekproef van alle vluchten.')
-        download(inv,'profiel_inspectie.csv')
+    exp=st.expander('Vergelijk fijne en grove meting voor alle zeven vluchten',on_change='rerun',key='profielvergelijking')
+    if exp.open:
+        with exp:
+            with st.spinner('Alle 14 profielbestanden één voor één inspecteren…'):inv=profile_inventory()
+            st.dataframe(inv,width='stretch',hide_index=True)
+            st.write('Duur is tijd tussen eerste en laatste registratiemoment, niet gegarandeerd vliegtijd tussen opstijgen en landen. Een grovere meting kan kortdurende pieken missen. Dit zijn zeven voorbeelden, geen representatieve steekproef van alle vluchten.')
+            download(inv,'profiel_inspectie.csv')
     with st.expander('Bronmetingen en ontbrekende waarden'):st.json(pm);st.dataframe(sub.head(200),width='stretch');download(sub,f'vlucht_{flight}_{resolution}.csv')
 
-elif page=='Data & verantwoording':
+
+def render_method():
+    d=all_d
     heading('ZRH / 06 · CONTROLEERBAAR','Van 17 bronnen naar één verhaal','Inspectie, beargumenteerde keuzes en gevoeligheidsanalyse. De oorspronkelijke bestanden zijn byte voor byte bewaard in data_sources.zip.')
     a,b,c=st.columns(3);a.metric('Roosterrijen vóór / na',f"{number(meta['raw_rows'])} / {number(meta['clean_rows'])}");b.metric('Luchthavenbron',number(meta['air_rows']));c.metric('Weerbron · alle jaren',number(meta['weather_rows']))
     st.subheader('Welke ingrepen zijn gedaan, en waarom?');st.dataframe(meta['audit'],width='stretch',hide_index=True)
@@ -291,7 +326,8 @@ elif page=='Data & verantwoording':
         st.markdown((Path(__file__).parent/'SOURCES.md').read_text(encoding='utf-8'))
     download(sensitivity,'gevoeligheidsanalyse.csv')
 
-else:
+
+def render_present():
     heading('LIVE / MAXIMAAL 10 MINUTEN','Een verhaal om zelf uit te leggen','Gebruik deze route als spreekplan. Vertel het opmerkelijke punt én wijs het aan in de grafiek. De kwaliteit van het live presenteren blijft jullie eigen onderdeel.')
     st.markdown('''
 | Tijd | Pagina | Wat vertellen en aanwijzen |
@@ -322,5 +358,43 @@ else:
 | Presentatie | Spreekplan van 9,5 minuut; wijzen, uitleggen, contact maken en terugkeren naar hoofdvraag |
 ''')
 
+def render_countries():
+    heading('ZRH / LANDEN','Met welke landen is Zürich verbonden?','Het luchthavenbestand bevat landen en coördinaten. Het verkeer per land ontstaat door die bron op ICAO aan het rooster te koppelen.')
+    known=d[d.country.notna()]
+    g=known.groupby('country',observed=True).agg(Bewegingen=('FLT','size'),Luchthavens=('icao','nunique'),Vertraging=('delay','mean'),Laat=('late15','mean')).reset_index()
+    aliases={'Russia':'Russian Federation','South Korea':'Korea, Republic of','North Korea':"Korea, Democratic People's Republic of",'Iran':'Iran, Islamic Republic of','Vietnam':'Viet Nam','Taiwan':'Taiwan, Province of China','Congo (Brazzaville)':'Congo','Congo (Kinshasa)':'Congo, The Democratic Republic of the','Laos':"Lao People's Democratic Republic",'Ivory Coast':"Côte d'Ivoire",'Burma':'Myanmar','Palestine':'Palestine, State of','Macau':'Macao','Cape Verde':'Cabo Verde'}
+    def iso(name):
+        try:return pycountry.countries.lookup(aliases.get(name,name)).alpha_3
+        except LookupError:return None
+    g['iso']=g.country.astype(str).map(iso)
+    mapped=g.dropna(subset=['iso']).copy()
+    if mapped.empty:st.info('Geen landen met een bruikbare ISO-landcode in deze selectie.');return
+    mapped['log_count']=np.log10(mapped.Bewegingen)
+    ticks=np.unique(np.round(np.geomspace(mapped.Bewegingen.min(),mapped.Bewegingen.max(),5)).astype(int))
+    focus=st.selectbox('Zoom naar land',['Alle geselecteerde landen']+mapped.sort_values('Bewegingen',ascending=False).country.astype(str).tolist())
+    shown=mapped if focus=='Alle geselecteerde landen' else mapped[mapped.country.eq(focus)]
+    fig=px.choropleth(shown,locations='iso',color='log_count',hover_name='country',color_continuous_scale='Blues',hover_data={'Bewegingen':True,'Luchthavens':True,'Vertraging':':.1f','Laat':':.1%','iso':False,'log_count':False},labels={'Vertraging':'Gemiddelde vertraging (min)','Laat':'≥15 min vertraagd'},title=f'{len(shown)} landen · {number(shown.Bewegingen.sum())} bewegingen')
+    fig.update_geos(projection_type='mercator',showcoastlines=True,showland=True,landcolor='#edf1f5',showcountries=True,countrycolor='#ffffff',showocean=True,oceancolor='#e8f1fa')
+    if focus!='Alle geselecteerde landen' or global_region=='Europa':fig.update_geos(fitbounds='locations',visible=True)
+    fig.update_layout(height=540,coloraxis_colorbar=dict(title='Bewegingen (log)',tickvals=np.log10(ticks),ticktext=[number(t) for t in ticks]))
+    chart(fig,key='landenkaart')
+    top=g.nlargest(1,'Bewegingen').iloc[0]
+    st.success(f"{top.country} heeft het meeste verkeer in de selectie: {number(top.Bewegingen)} bewegingen via {top.Luchthavens} luchthavens.")
+    st.caption('Scroll of gebruik de zoomknoppen om in te zoomen; sleep om te verplaatsen. Hover toont het land, volume, aantal luchthavens en vertraging. Blauw loopt op via een logaritmische schaal. Grijs betekent geen getekende waarde, niet bewezen nul verkeer. Dit zijn verbindingen met Zürich, geen nationale luchtvaarttotalen.')
+    omitted=int(d.country.isna().sum())+int(g.loc[g.iso.isna(),'Bewegingen'].sum())
+    if omitted:st.caption(f'{number(omitted)} bewegingen hebben geen gekoppeld land of herkenbare landcode en staan niet op de landenkaart; ze blijven meetellen in de selectie.')
+    st.dataframe(g.drop(columns='iso').sort_values('Bewegingen',ascending=False),width='stretch',hide_index=True)
+    download(g.drop(columns='iso'),'landen.csv')
+    st.caption('Open Luchthavens voor de afzonderlijke vliegvelden binnen dezelfde selectie. Landgrenzen: Plotly / Natural Earth; landcodes: ISO via pycountry.')
+
+tabs=st.tabs(PAGES,key='hoofdtabs',on_change='rerun')
+renderers=[render_overview,render_traffic,render_countries,render_airports,render_weather,render_forecast,render_profiles,render_method,render_present]
+for i,(tab,render) in enumerate(zip(tabs,renderers)):
+    if tab.open:
+        with tab:
+            if i<5 and d.empty:
+                st.info('Geen bewegingen voor deze filters. Kies andere jaren, maanden, richting of landen in de zijbalk.')
+            else:
+                render()
 st.divider()
-st.caption('Minor Data Science · Case 3 · Zürich 2019–2020 · Alle uitkomsten zijn berekend uit de meegeleverde bronnen. Geen actuele operationele vluchtinformatie.')
+st.caption('Minor Data Science · Case 3 · Zürich 2019–2020 · Geen actuele operationele vluchtinformatie.')

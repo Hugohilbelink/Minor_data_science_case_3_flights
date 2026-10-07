@@ -11,10 +11,13 @@ from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from sklearn.inspection import permutation_importance
 from threadpoolctl import threadpool_limits
 
-@st.cache_data(show_spinner=False)
-def train_models(d,w):
+@st.cache_data(show_spinner=False, max_entries=1)
+def train_models():
+    # Cache één vast modelresultaat, zonder grote frames per filter als cachesleutel.
+    from data_pipeline import load_data
+    d,w,_=load_data()
     out=d[d.direction.eq('Vertrek')]
-    daily=out.groupby('date').agg(target=('positive_delay','mean'),flights=('FLT','size'),late15=('late15','mean')).reindex(pd.date_range('2019-01-01','2020-12-31',name='date'))
+    daily=out.groupby('date',observed=True).agg(target=('positive_delay','mean'),flights=('FLT','size'),late15=('late15','mean')).reindex(pd.date_range('2019-01-01','2020-12-31',name='date'))
     daily=daily.join(w.set_index('date')[['tavg','prcp','wspd','wpgt','pres']])
     X=pd.DataFrame(index=daily.index)
     X['vertraging_gisteren']=daily.target.shift(1)
