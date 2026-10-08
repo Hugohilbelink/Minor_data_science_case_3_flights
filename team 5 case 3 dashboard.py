@@ -139,13 +139,13 @@ def render_traffic(destination=None):
         datesel=st.date_input('Periode',(pd.Timestamp('2019-01-01').date(),pd.Timestamp('2020-12-31').date()),min_value=pd.Timestamp('2019-01-01').date(),max_value=pd.Timestamp('2020-12-31').date())
         if len(datesel)!=2:st.info('Kies een begin- en einddatum.');st.stop()
         ts=ts[ts.date.between(pd.Timestamp(datesel[0]),pd.Timestamp(datesel[1]))]
-        fig=px.line(ts,x='date',y=col,color='direction',color_discrete_map=COLORS,labels={'date':'Datum',col:ylabel},title=f'{metric} per {unit.lower()} · {dest}')
+        fig=px.line(ts,x='date',y=col,color='direction',line_dash='direction',line_dash_map={'Aankomst':'solid','Vertrek':'dash'},color_discrete_map=COLORS,labels={'date':'Datum',col:ylabel},title=f'{metric} per {unit.lower()} · {dest}')
         fig.update_xaxes(rangeslider_visible=True)
     else:
         ts=ts[ts.date.dt.month.between(*months)].copy();ts['Jaar']=ts.date.dt.year.astype(str)
         ts=ts[ts.date.dt.year.isin([2019,2020])]
         ts['Kalender']=pd.to_datetime('2000-'+ts.date.dt.strftime('%m-%d'))
-        fig=px.line(ts,x='Kalender',y=col,color='Jaar',facet_row='direction',color_discrete_map=COLORS,labels={'Kalender':'Kalendermaand / dag',col:ylabel},title='Dezelfde kalenderperiode maakt het verschil zichtbaar')
+        fig=px.line(ts,x='Kalender',y=col,color='Jaar',line_dash='Jaar',line_dash_map={'2019':'solid','2020':'dash'},facet_row='direction',color_discrete_map=COLORS,labels={'Kalender':'Kalendermaand / dag',col:ylabel},title='Dezelfde kalenderperiode maakt het verschil zichtbaar')
         fig.update_xaxes(tickformat='%d %b',rangeslider_visible=False)
     fig.update_yaxes(rangemode='tozero' if col=='count' else 'normal');chart(fig)
     st.caption('Lineaire schaal: verschillen blijven in echte aantallen/minuten leesbaar. Dag toont fluctuaties, week dempt dagruis, maand toont de jaarbreuk. Maandtotalen hangen ook af van de maandlengte. Week = maandag t/m zondag; de eerste en laatste week zijn deels gevuld. Sleep in de grafiek om te zoomen; dubbelklik om te herstellen.')
@@ -238,8 +238,8 @@ def render_weather():
         groups=groups[groups[gcol].isin(top)]
     groups['Jaar']=groups.year.astype(str)
     groups[gcol]=groups[gcol].astype(str)
-    fig=px.bar(groups,x=gcol,y='Vertraging',color='Jaar',barmode='group',color_discrete_map=COLORS,hover_data=['Bewegingen','Mediaan','Laat'],labels={gcol:group,'Vertraging':'Gemiddelde vertraging (min)'},title=f'{direction}: vertraging per {group.lower()} en jaar')
-    chart(fig);st.caption('Elk geselecteerd jaar heeft eigen balken: blauw = 2019, oranje = 2020. Ontbrekende categorieën worden geen nul. Maximaal 12 categorieën op basis van gezamenlijk volume, zodat beide jaren dezelfde categorieën vergelijken. Hier telt vroeg als negatieve vertraging. Baan is beschrijvend en zit niet in het voorspelmodel.')
+    fig=px.bar(groups,x=gcol,y='Vertraging',color='Jaar',pattern_shape='Jaar',pattern_shape_map={'2019':'','2020':'/'},barmode='group',color_discrete_map=COLORS,hover_data=['Bewegingen','Mediaan','Laat'],labels={gcol:group,'Vertraging':'Gemiddelde vertraging (min)'},title=f'{direction}: vertraging per {group.lower()} en jaar')
+    chart(fig);st.caption('Elk geselecteerd jaar heeft eigen balken: 2019 = blauw en effen, 2020 = oranje met schuine strepen. Ontbrekende categorieën worden geen nul. Maximaal 12 categorieën op basis van gezamenlijk volume, zodat beide jaren dezelfde categorieën vergelijken. Hier telt vroeg als negatieve vertraging. Baan is beschrijvend en zit niet in het voorspelmodel.')
     with st.expander('Verdeling, uitschieters en export'):
         zoom=st.checkbox('Zoom op -60 tot +180 minuten',True)
         hist=sub[sub.delay.between(-60,180)] if zoom else sub[sub.delay.notna()]
@@ -263,7 +263,7 @@ def render_forecast():
     fig.add_trace(go.Scatter(x=test.date,y=test.low,line=dict(width=0),name='Ondergrens',showlegend=False))
     fig.add_trace(go.Scatter(x=test.date,y=test.high,line=dict(width=0),fill='tonexty',fillcolor='rgba(37,99,235,.12)',name='90%-streefband'))
     fig.add_trace(go.Scatter(x=test.date,y=test.target,line=dict(color=TEAL,width=2),name='Werkelijk'))
-    fig.add_trace(go.Scatter(x=test.date,y=test.prediction,line=dict(color=BLUE,width=2),name='Voorspeld'))
+    fig.add_trace(go.Scatter(x=test.date,y=test.prediction,line=dict(color=BLUE,width=2,dash='dash'),name='Voorspeld'))
     fig.update_layout(title='Voorspelling naast werkelijkheid: pieken blijven moeilijk',xaxis_title='Datum',yaxis_title='Gemiddelde vertrekvertraging (min; vroeg = 0)');fig.update_xaxes(rangeslider_visible=True);chart(fig)
     st.caption(f"Band = voorspelling ±{result['band']:.1f} min, ondergrens minimaal 0. Gekalibreerd op absolute validatiefouten met een 90%-streefdekking; geen garantie bij afhankelijke dagen of een veranderd proces. Het model blijft na augustus 2019 vast. In 2020 worden gisteren gemeten waarden dagelijks bijgewerkt: dit is een rollende 1-dagstoets, geen voorspelling van een heel jaar ineens.")
     chosen=st.select_slider('Bekijk één voorspelde dag',options=test.date.dt.strftime('%Y-%m-%d').tolist())
