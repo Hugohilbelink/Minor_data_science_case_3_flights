@@ -195,6 +195,18 @@ def render_weather():
     daily=daily[daily.bewegingen>=minimum].reset_index();daily['Jaar']=daily.jaar.astype(str)
     matrix_days=render_correlations(daily,direction)
     st.subheader('Hoe ziet één verband er in de praktijk uit?')
+    summary=daily.copy();summary['Weer']=np.select([summary.regen.isna(),summary.regen.ge(1)],['Onbekend','Regen ≥1 mm'],default='Droog / <1 mm')
+    agg=summary.groupby(['Jaar','Weer']).agg(Dagen=('date','size'),Vertraging_min=('vertraging','mean'),Mediaan_min=('vertraging','median'),Vluchten_per_dag=('bewegingen','mean')).reset_index()
+    kpis=st.columns(2)
+    for slot,yr in zip(kpis,[2019,2020]):
+        row=agg[agg.Jaar.eq(str(yr))].set_index('Weer')
+        valid={'Regen ≥1 mm','Droog / <1 mm'}.issubset(row.index)
+        diff=row.loc['Regen ≥1 mm','Vertraging_min']-row.loc['Droog / <1 mm','Vertraging_min'] if valid else np.nan
+        slot.metric(f'{yr} · regen minus droog',f'{diff:+.1f} min' if pd.notna(diff) else 'Onvoldoende data')
+        if valid:slot.caption(f'{int(row.loc["Regen ≥1 mm","Dagen"])} regenachtige en {int(row.loc["Droog / <1 mm","Dagen"])} droge dagen')
+    st.caption('Verschil in gemiddelde vertraging (vroeg = 0) binnen elk jaar. Regen ≥1 mm; droog <1 mm. Iedere dag weegt even zwaar. De KPI’s volgen de zijbalkfilters; de puntenwolk gebruikt het gekozen matrixjaar. Samenhang bewijst geen oorzaak. Ontbrekende neerslag telt niet als droog.')
+    with st.expander('Exacte cijfers achter regen en droog'):
+        st.dataframe(agg.rename(columns={'Vertraging_min':'Gem. min','Mediaan_min':'Mediaan min','Vluchten_per_dag':'Vluchten/dag'}).round(1),width='stretch',hide_index=True)
     variable=st.selectbox('Vergelijk met vertraging',['Neerslag (mm)','Wind (km/h)','Windstoot (km/h)','Temperatuur (°C)','Luchtdruk (hPa)','Bewegingen per dag']);col={'Neerslag (mm)':'regen','Wind (km/h)':'wind','Windstoot (km/h)':'windstoot','Temperatuur (°C)':'temperatuur','Luchtdruk (hPa)':'luchtdruk','Bewegingen per dag':'bewegingen'}[variable]
     rain=matrix_days.dropna(subset=[col,'vertraging']).copy()
     if rain.empty:st.info('Geen dagen met voldoende bewegingen en deze weermeting. Verlaag de minimumgrens.');st.stop()
@@ -202,25 +214,6 @@ def render_weather():
     chart(fig)
     corr=rain[col].corr(rain.vertraging,method='spearman')
     st.caption(f'Eén punt = één dag in het gekozen matrixjaar. Spearman-correlatie {corr:.2f}; dit corrigeert niet voor seizoen, routeaanbod of drukte. {len(matrix_days)-len(rain)} dagen vallen weg door ontbrekend weer of vertraging. Te vroeg wordt voor deze grootheid 0 min, zodat vroege vluchten late vluchten niet wegmiddelen.')
-    summary=daily.copy();summary['Weer']=np.select([summary.regen.isna(),summary.regen.ge(1)],['Onbekend','Regen ≥1 mm'],default='Droog / <1 mm')
-    agg=summary.groupby(['Jaar','Weer']).agg(Dagen=('date','size'),Vertraging_min=('vertraging','mean'),Mediaan_min=('vertraging','median'),Vluchten_per_dag=('bewegingen','mean')).reset_index()
-    st.subheader('Droge en regenachtige dagen naast elkaar')
-    a,b=st.columns([3,2])
-    with a:
-        known=agg[agg.Weer.ne('Onbekend')]
-        if not known.empty:
-            fig=px.bar(known,x='Jaar',y='Vertraging_min',color='Weer',barmode='group',text_auto='.1f',category_orders={'Weer':['Droog / <1 mm','Regen ≥1 mm']},color_discrete_map={'Droog / <1 mm':BLUE,'Regen ≥1 mm':ORANGE},hover_data={'Dagen':True,'Vluchten_per_dag':':.1f'},labels={'Vertraging_min':'Gemiddelde vertraging (min; vroeg = 0)','Jaar':'Jaar'},title=f'{direction}: verschil tussen droge en regenachtige dagen')
-            fig.update_yaxes(rangemode='tozero');chart(fig,key='regenvergelijking')
-        else:st.info('Geen dagen met bekende neerslag in deze selectie.')
-    with b:
-        st.caption('Exacte cijfers, inclusief dagen met onbekende neerslag')
-        st.dataframe(agg.rename(columns={'Vertraging_min':'Gem. min','Mediaan_min':'Mediaan min','Vluchten_per_dag':'Vluchten/dag'}).round(1),width='stretch',hide_index=True)
-    st.caption('Elke dag weegt even zwaar. Regen = minimaal 1 mm; droog = minder dan 1 mm. Onbekende neerslag staat alleen in de tabel en wordt niet als droog behandeld. De vergelijking volgt de zijbalkfilters; dit verschil is geen bewezen effect van regen.')
-    for yr in agg.Jaar.unique():
-        row=agg[agg.Jaar.eq(yr)].set_index('Weer')
-        if {'Regen ≥1 mm','Droog / <1 mm'}.issubset(row.index):
-            diff=row.loc['Regen ≥1 mm','Vertraging_min']-row.loc['Droog / <1 mm','Vertraging_min']
-            st.write(f'{yr}: op dagen met ≥1 mm regen is de gemiddelde positieve vertraging {abs(diff):.1f} minuten {"hoger" if diff>=0 else "lager"}. Dagen wegen hier even zwaar; vluchtmix en seizoen kunnen dit verschil mede verklaren.')
     st.divider();st.subheader('Wat gebeurt er binnen de dag?')
     group=st.selectbox('Uitsplitsing',['Gepland uur','Vliegtuigtype','Baan','Afstandsklasse'])
     gcol={'Gepland uur':'hour','Vliegtuigtype':'ACT','Baan':'RWY','Afstandsklasse':'distance_band'}[group]
