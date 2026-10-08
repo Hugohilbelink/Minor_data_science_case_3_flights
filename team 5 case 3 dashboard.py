@@ -170,6 +170,7 @@ def render_correlations(daily,direction):
     fig=go.Figure(go.Heatmap(z=z,x=values.columns,y=values.columns,zmin=-1,zmax=1,zmid=0,colorscale='RdBu_r',text=text,texttemplate='%{text}',customdata=pairs.to_numpy(),hoverongaps=False,hovertemplate='%{y} ↔ %{x}<br>Spearman ρ: %{z:.2f}<br>Gekoppelde dagen: %{customdata}<extra></extra>',colorbar=dict(title='Spearman ρ',tickvals=[-1,-.5,0,.5,1])))
     fig.update_layout(title=f'{yr} · {len(selected)} dagen · dezelfde dag, één waarneming per dag',height=540,margin=dict(l=140,b=120),xaxis=dict(tickangle=-30),yaxis=dict(autorange='reversed'))
     chart(fig,key='correlatiematrix')
+    st.write('**Zo lees je de matrix:** kies een kolom en een rij; hun kruispunt toont de samenhang. +0,50 betekent een matig positief verband: hogere waarden gaan vaak samen, met uitzonderingen. Het betekent geen 50% meer vertraging en bewijst geen oorzaak. −0,50 betekent een matig tegengesteld verband; rond 0 is er weinig monotone samenhang. Elke waarneming is één dag.')
     st.caption('Rood = positief verband, blauw = negatief; wit rond nul = weinig monotone samenhang. Spearman gebruikt rangordes en is minder gevoelig voor extreme vertragingen. Minimaal 20 complete dagparen per cel; ontbrekend blijft leeg. De bovenste helft en zelfcorrelaties zijn weggelaten. Hover toont het aantal gekoppelde dagen.')
     relations=corr[delay_label].drop(delay_label).dropna()
     if not relations.empty:
@@ -201,7 +202,18 @@ def render_weather():
     st.caption(f'Eén punt = één dag in het gekozen matrixjaar. Spearman-correlatie {corr:.2f}; dit corrigeert niet voor seizoen, routeaanbod of drukte. {len(matrix_days)-len(rain)} dagen vallen weg door ontbrekend weer of vertraging. Te vroeg wordt voor deze grootheid 0 min, zodat vroege vluchten late vluchten niet wegmiddelen.')
     summary=daily.copy();summary['Weer']=np.select([summary.regen.isna(),summary.regen.ge(1)],['Onbekend','Regen ≥1 mm'],default='Droog / <1 mm')
     agg=summary.groupby(['Jaar','Weer']).agg(Dagen=('date','size'),Vertraging_min=('vertraging','mean'),Mediaan_min=('vertraging','median'),Vluchten_per_dag=('bewegingen','mean')).reset_index()
-    st.subheader('Vergelijk binnen hetzelfde jaar');st.dataframe(agg,width='stretch',hide_index=True)
+    st.subheader('Droge en regenachtige dagen naast elkaar')
+    a,b=st.columns([3,2])
+    with a:
+        known=agg[agg.Weer.ne('Onbekend')]
+        if not known.empty:
+            fig=px.bar(known,x='Jaar',y='Vertraging_min',color='Weer',barmode='group',text_auto='.1f',category_orders={'Weer':['Droog / <1 mm','Regen ≥1 mm']},color_discrete_map={'Droog / <1 mm':BLUE,'Regen ≥1 mm':ORANGE},hover_data={'Dagen':True,'Vluchten_per_dag':':.1f'},labels={'Vertraging_min':'Gemiddelde vertraging (min; vroeg = 0)','Jaar':'Jaar'},title=f'{direction}: verschil tussen droge en regenachtige dagen')
+            fig.update_yaxes(rangemode='tozero');chart(fig,key='regenvergelijking')
+        else:st.info('Geen dagen met bekende neerslag in deze selectie.')
+    with b:
+        st.caption('Exacte cijfers, inclusief dagen met onbekende neerslag')
+        st.dataframe(agg.rename(columns={'Vertraging_min':'Gem. min','Mediaan_min':'Mediaan min','Vluchten_per_dag':'Vluchten/dag'}).round(1),width='stretch',hide_index=True)
+    st.caption('Elke dag weegt even zwaar. Regen = minimaal 1 mm; droog = minder dan 1 mm. Onbekende neerslag staat alleen in de tabel en wordt niet als droog behandeld. De vergelijking volgt de zijbalkfilters; dit verschil is geen bewezen effect van regen.')
     for yr in agg.Jaar.unique():
         row=agg[agg.Jaar.eq(yr)].set_index('Weer')
         if {'Regen ≥1 mm','Droog / <1 mm'}.issubset(row.index):
