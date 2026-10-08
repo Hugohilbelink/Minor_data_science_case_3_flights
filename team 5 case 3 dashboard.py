@@ -77,10 +77,11 @@ def render_overview():
     drop=(counts[2020]/counts[2019]-1)*100 if comparable else np.nan
     heading('ZRH / 01 · HET VERHAAL','Minder verkeer. Ook minder vertraging?','Wat veranderde tussen 2019 en 2020, welke rol spelen bestemming en weer, en hoe goed kunnen we de vertraging van morgen inschatten?')
     headline=f'{abs(drop):.1f}% {"minder" if drop<0 else "meer"} bewegingen in 2020' if comparable else f'{number(len(d))} bewegingen in de selectie'
-    st.markdown(f'<div class="hero"><h2>{headline}</h2><p>De filters links veranderen de cijfers en grafieken op de analysetabs. Vergelijk dezelfde maanden in beide jaren.</p></div>',unsafe_allow_html=True)
-    c=st.columns(4)
     out=d[d.direction.eq('Vertrek')]
     p=(out.groupby('year',observed=True).late15.mean()*100).reindex([2019,2020])
+    answer=f'Het aandeel late vertrekken is {abs(p[2020]-p[2019]):.1f} procentpunt {"lager" if p[2020]<p[2019] else "hoger"} in 2020.' if p.notna().all() else 'Selecteer beide jaren met vertrekken om het aandeel late vertrekken te vergelijken.'
+    st.markdown(f'<div class="hero"><h2>{headline}</h2><p>{answer} Dit beschrijft dezelfde geselecteerde maanden; het bewijst geen oorzakelijk verband tussen drukte en vertraging.</p></div>',unsafe_allow_html=True)
+    c=st.columns(4)
     for i,yr in enumerate([2019,2020]):
         c[i].metric(f'Vliegbewegingen {yr}',number(counts[yr]) if pd.notna(counts[yr]) else 'Geen selectie')
         c[i+2].metric(f'Vertrek ≥15 min te laat · {yr}',f'{p[yr]:.1f}%' if pd.notna(p[yr]) else 'Geen vertrekken')
@@ -94,6 +95,7 @@ def render_overview():
     with st.expander('Leeswijzer en definities'):
         st.write('Eén rij = één aankomst of vertrek. Vertraging = werkelijke lokale kloktijd minus geplande kloktijd, met een expliciete daggrensaanname. Te vroeg is negatief. ≥15 minuten is onze vaste grens voor vertraagd. Ontbrekende of verdachte vertragingen tellen niet mee in het percentage; de beweging blijft in het verkeersvolume.')
         st.write('De eerste laag bevat alleen de hoofdvraag, vier kerncijfers en twee vervolgvraagkaarten. Gates, ruwe codes, 295 losse routes en modeldetails zijn bewust naar een tweede laag verplaatst. Daar beantwoorden ze de vervolgvraag zonder het overzicht te overbelasten.')
+        st.write('De kaart staat centraal: volume, vertraging en jaarverandering delen één geografische weergave. De route-staafgrafiek is alleen op verzoek zichtbaar om herhaling te vermijden. De gekoppelde tijdgrafiek blijft: de kaart toont waar, de lijn wanneer. Weer en voorspelling blijven apart omdat zij dagwaarden van Zürich beschrijven; bestemmingsweer is niet beschikbaar. Amsterdam–Barcelona hoort bij een afzonderlijk gemeten traject. De matrix toont verbanden, de regenvergelijking hun praktische omvang en de puntenwolk de spreiding.')
 
 
 def render_traffic(destination=None):
@@ -197,6 +199,15 @@ def render_weather():
     rain=matrix_days.dropna(subset=[col,'vertraging']).copy()
     if rain.empty:st.info('Geen dagen met voldoende bewegingen en deze weermeting. Verlaag de minimumgrens.');st.stop()
     fig=px.scatter(rain,x=col,y='vertraging',color='Jaar',size='bewegingen',size_max=18,opacity=.65,color_discrete_map=COLORS,hover_data={'date':True,'bewegingen':True},labels={col:variable,'vertraging':f'Gemiddelde {"vertrek" if direction=="Vertrek" else "aankomst"}vertraging (min; vroeg = 0)'},title=f'{len(rain)} dagen: spreiding is belangrijker dan één gemiddelde')
+    show_trend=st.toggle('Toon beschrijvende trendlijn',value=False,key='weertrendlijn')
+    if show_trend:
+        x=rain[col].to_numpy(dtype=float);y=rain.vertraging.to_numpy(dtype=float)
+        if len(x)>=20 and np.unique(x).size>=2:
+            slope,intercept=np.polyfit(x,y,1)
+            grid=np.linspace(x.min(),x.max(),100)
+            fig.add_trace(go.Scatter(x=grid,y=intercept+slope*grid,mode='lines',line=dict(color=INK,width=3,dash='dash'),name='Beschrijvende lineaire trendlijn',hovertemplate='Lineaire samenvatting: %{y:.1f} min<extra>Geen voorspelling</extra>'))
+            st.caption('De gestreepte lijn is een lineaire kleinste-kwadratenpassing op deze getoonde dagen; iedere dag weegt even zwaar. Alleen binnen het waargenomen bereik. Uitschieters kunnen de lijn beïnvloeden. Dit is geen toekomstvoorspelling, geen bewijs van oorzaak en een andere maat dan Spearman-correlatie.')
+        else:st.info('Voor een trendlijn zijn minimaal twintig complete dagen en twee verschillende x-waarden nodig.')
     chart(fig)
     corr=rain[col].corr(rain.vertraging,method='spearman')
     st.caption(f'Eén punt = één dag in het gekozen matrixjaar. Spearman-correlatie {corr:.2f}; dit corrigeert niet voor seizoen, routeaanbod of drukte. {len(matrix_days)-len(rain)} dagen vallen weg door ontbrekend weer of vertraging. Te vroeg wordt voor deze grootheid 0 min, zodat vroege vluchten late vluchten niet wegmiddelen.')
@@ -252,13 +263,18 @@ def render_forecast():
     fig.add_trace(go.Scatter(x=test.date,y=test.high,line=dict(width=0),fill='tonexty',fillcolor='rgba(37,99,235,.12)',name='90%-streefband'))
     fig.add_trace(go.Scatter(x=test.date,y=test.target,line=dict(color=TEAL,width=2),name='Werkelijk'))
     fig.add_trace(go.Scatter(x=test.date,y=test.prediction,line=dict(color=BLUE,width=2),name='Voorspeld'))
-    fig.update_layout(title='Voorspelling naast werkelijkheid: pieken blijven moeilijk',xaxis_title='Datum',yaxis_title='Positieve vertrekvertraging (min)');fig.update_xaxes(rangeslider_visible=True);chart(fig)
+    fig.update_layout(title='Voorspelling naast werkelijkheid: pieken blijven moeilijk',xaxis_title='Datum',yaxis_title='Gemiddelde vertrekvertraging (min; vroeg = 0)');fig.update_xaxes(rangeslider_visible=True);chart(fig)
     st.caption(f"Band = voorspelling ±{result['band']:.1f} min, ondergrens minimaal 0. Gekalibreerd op absolute validatiefouten met een 90%-streefdekking; geen garantie bij afhankelijke dagen of een veranderd proces. Het model blijft na augustus 2019 vast. In 2020 worden gisteren gemeten waarden dagelijks bijgewerkt: dit is een rollende 1-dagstoets, geen voorspelling van een heel jaar ineens.")
     chosen=st.select_slider('Bekijk één voorspelde dag',options=test.date.dt.strftime('%Y-%m-%d').tolist())
     row=test[test.date.eq(pd.Timestamp(chosen))].iloc[0]
     st.write(f"**{chosen}:** voorspeld {row.prediction:.1f} min, band {row.low:.1f}–{row.high:.1f} min, werkelijk {row.target:.1f} min. Gebaseerd op {int(row.flights)} vertrekbewegingen die dag.")
     st.subheader('Verslaat een model een eenvoudige regel?')
-    st.dataframe(result['scores'].style.format({'MAE (min)':'{:.2f}','RMSE (min)':'{:.2f}'}),width='stretch',hide_index=True)
+    score_period='Test nov–dec 2019' if period=='Test 2019' else 'Stresstest 2020'
+    scores=result['scores']
+    st.dataframe(scores[scores.Periode.eq(score_period)].sort_values('MAE (min)').style.format({'MAE (min)':'{:.2f}','RMSE (min)':'{:.2f}'}),width='stretch',hide_index=True)
+    st.caption(f'Hier zie je alleen {score_period}. De winnaar is gekozen op de eerdere validatieperiode, niet op deze toets.')
+    with st.expander('Alle modelresultaten en de validatiekeuze'):
+        st.dataframe(scores.style.format({'MAE (min)':'{:.2f}','RMSE (min)':'{:.2f}'}),width='stretch',hide_index=True)
     st.caption('MAE = gemiddelde absolute fout in minuten; RMSE bestraft grote missers sterker. We vergelijken gisteren en het 7-daags gemiddelde met Ridge-regressie, boosting en Ridge zonder weer. Als een baseline wint, rapporteren we dat eerlijk.')
     with st.expander('Waar zit het model ernaast?'):
         errors=test[['date','flights','target','prediction','error','covered']].copy();errors['Absolute fout']=errors.error.abs()
