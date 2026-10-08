@@ -199,15 +199,6 @@ def render_weather():
     rain=matrix_days.dropna(subset=[col,'vertraging']).copy()
     if rain.empty:st.info('Geen dagen met voldoende bewegingen en deze weermeting. Verlaag de minimumgrens.');st.stop()
     fig=px.scatter(rain,x=col,y='vertraging',color='Jaar',size='bewegingen',size_max=18,opacity=.65,color_discrete_map=COLORS,hover_data={'date':True,'bewegingen':True},labels={col:variable,'vertraging':f'Gemiddelde {"vertrek" if direction=="Vertrek" else "aankomst"}vertraging (min; vroeg = 0)'},title=f'{len(rain)} dagen: spreiding is belangrijker dan één gemiddelde')
-    show_trend=st.toggle('Toon beschrijvende trendlijn',value=False,key='weertrendlijn')
-    if show_trend:
-        x=rain[col].to_numpy(dtype=float);y=rain.vertraging.to_numpy(dtype=float)
-        if len(x)>=20 and np.unique(x).size>=2:
-            slope,intercept=np.polyfit(x,y,1)
-            grid=np.linspace(x.min(),x.max(),100)
-            fig.add_trace(go.Scatter(x=grid,y=intercept+slope*grid,mode='lines',line=dict(color=INK,width=3,dash='dash'),name='Beschrijvende lineaire trendlijn',hovertemplate='Lineaire samenvatting: %{y:.1f} min<extra>Geen voorspelling</extra>'))
-            st.caption('De gestreepte lijn is een lineaire kleinste-kwadratenpassing op deze getoonde dagen; iedere dag weegt even zwaar. Alleen binnen het waargenomen bereik. Uitschieters kunnen de lijn beïnvloeden. Dit is geen toekomstvoorspelling, geen bewijs van oorzaak en een andere maat dan Spearman-correlatie.')
-        else:st.info('Voor een trendlijn zijn minimaal twintig complete dagen en twee verschillende x-waarden nodig.')
     chart(fig)
     corr=rain[col].corr(rain.vertraging,method='spearman')
     st.caption(f'Eén punt = één dag in het gekozen matrixjaar. Spearman-correlatie {corr:.2f}; dit corrigeert niet voor seizoen, routeaanbod of drukte. {len(matrix_days)-len(rain)} dagen vallen weg door ontbrekend weer of vertraging. Te vroeg wordt voor deze grootheid 0 min, zodat vroege vluchten late vluchten niet wegmiddelen.')
