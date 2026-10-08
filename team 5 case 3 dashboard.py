@@ -351,7 +351,9 @@ def render_method():
 
 def render_network():
     import pycountry
-    heading('ZRH / 02 · VERKEER & NETWERK','Waar vliegt Zürich heen, en wat veranderde?','Eén kaart combineert het verkeer per land met afzonderlijke luchthavens. De tijdgrafiek en routevergelijking eronder beantwoorden elk een andere vervolgvraag.')
+    heading('ZRH / 02 · VERKEER & NETWERK','Waar vliegt Zürich heen, en wat veranderde?','Onderzoek op één kaart het verkeersvolume, de gemiddelde vertraging en de verandering tussen de jaren. Kies een verbinding om het verloop in de tijd eronder te bekijken.')
+    map_metric=st.selectbox('Wat laat de kaart zien?',['Verkeersvolume','Gemiddelde vertraging','Verandering 2019 → 2020'],key='kaartgrootheid')
+    map_minimum=st.slider('Minimum aantal geldige vertragingen per land of luchthaven',10,500,100,step=10) if map_metric=='Gemiddelde vertraging' else 100
     country=d[d.country.notna()].groupby('country',observed=True).agg(Bewegingen=('FLT','size'),Luchthavens=('icao','nunique'),Vertraging=('delay','mean')).reset_index()
     aliases={'Turkey':'TUR','Macedonia':'MKD','Russia':'Russian Federation','South Korea':'Korea, Republic of','North Korea':"Korea, Democratic People's Republic of",'Iran':'Iran, Islamic Republic of','Vietnam':'Viet Nam','Taiwan':'Taiwan, Province of China','Congo (Brazzaville)':'Congo','Congo (Kinshasa)':'Congo, The Democratic Republic of the','Laos':"Lao People's Democratic Republic",'Ivory Coast':"Côte d'Ivoire",'Burma':'Myanmar','Palestine':'Palestine, State of','Macau':'Macao','Cape Verde':'Cabo Verde'}
     def iso(name):
@@ -360,6 +362,22 @@ def render_network():
     country['iso']=country.country.astype(str).map(iso)
     countries=country.dropna(subset=['iso']).copy()
     airports=d[d.lat.notna()].groupby(['icao','airport_name','city','country','lat','lon'],observed=True,dropna=False).agg(Bewegingen=('FLT','size'),Vertraging=('delay','mean'),Laat=('late15','mean'),Afstand=('distance_km','first')).reset_index()
+    def enrich_map(frame,key):
+        frame=frame.copy()
+        if map_metric=='Gemiddelde vertraging':
+            stats=d.groupby(key,observed=True).agg(Kaartwaarde=('positive_delay','mean'),Geldig=('positive_delay','count'))
+            frame=frame.merge(stats,left_on=key,right_index=True,how='left',validate='many_to_one')
+            frame.loc[frame.Geldig<map_minimum,'Kaartwaarde']=np.nan
+        elif map_metric=='Verandering 2019 → 2020':
+            counts=d.groupby([key,'year'],observed=True).size().unstack('year').reindex(columns=[2019,2020])
+            counts.columns=['Aantal2019','Aantal2020']
+            frame=frame.merge(counts,left_on=key,right_index=True,how='left',validate='many_to_one')
+            frame['Kaartwaarde']=(frame.Aantal2020/frame.Aantal2019-1)*100
+            frame.loc[(frame.Aantal2019<100)|(frame.Aantal2020<20)|frame.Aantal2019.isna()|frame.Aantal2020.isna(),'Kaartwaarde']=np.nan
+        return frame
+    countries=enrich_map(countries,'country');airports=enrich_map(airports,'icao')
+    if map_metric=='Verandering 2019 → 2020' and set(years)!={2019,2020}:
+        st.warning('Selecteer beide jaren in de zijbalk voor de veranderingskaart. Zonder beide jaren blijft de kleurwaarde onbekend.')
     a,b=st.columns([1,2])
     layer=a.selectbox('Kaartlaag',['Landen + luchthavens','Alleen landen','Alleen luchthavens'])
     focus=b.selectbox('Zoom naar land',['Hele selectie']+countries.sort_values('Bewegingen',ascending=False).country.astype(str).tolist())
@@ -375,14 +393,43 @@ def render_network():
         fig.add_trace(go.Choropleth(locations=shown.iso,z=np.log10(shown.Bewegingen),text=shown.country.astype(str),colorscale='Blues',zmin=float(np.log10(countries.Bewegingen.min())),zmax=float(np.log10(countries.Bewegingen.max())),marker_line_color='white',marker_line_width=.5,customdata=shown[['Bewegingen','Luchthavens','Vertraging']].to_numpy(),hovertemplate='<b>%{text}</b><br>Bewegingen: %{customdata[0]:,.0f}<br>Luchthavens: %{customdata[1]:.0f}<br>Gem. vertraging: %{customdata[2]:.1f} min<extra>Landtotaal</extra>',colorbar=dict(title='Landtotaal (log)',tickvals=np.log10(ticks),ticktext=[number(t) for t in ticks]),name='Landen'))
     if layer!='Alleen landen' and not points.empty:
         fig.add_trace(go.Scattergeo(lat=points.lat,lon=points.lon,mode='markers',text=points.airport_name.astype(str),customdata=points[['icao','city','country','Bewegingen','Vertraging','Laat']].to_numpy(),marker=dict(size=points.Bewegingen,sizemode='area',sizeref=2*float(airports.Bewegingen.max())/23**2,sizemin=3,color=ORANGE,opacity=.78,line=dict(width=.6,color='white')),hovertemplate='<b>%{text}</b><br>%{customdata[0]} · %{customdata[1]}<br>%{customdata[2]}<br>Bewegingen: %{customdata[3]:,.0f}<br>Gem. vertraging: %{customdata[4]:.1f} min<br>≥15 min te laat: %{customdata[5]:.1%}<extra>Luchthaven</extra>',name='Luchthavens · grootte = volume'))
+    if map_metric!='Verkeersvolume':
+        fig=go.Figure()
+        finite=pd.concat([countries.Kaartwaarde,airports.Kaartwaarde]).dropna()
+        delay_mode=map_metric=='Gemiddelde vertraging'
+        limit=max(1,float(finite.max())) if delay_mode and len(finite) else max(1,float(finite.abs().max())) if len(finite) else 1
+        color_title='Gem. min · vroeg = 0' if delay_mode else 'Verandering (%)'
+        fig.update_layout(coloraxis=dict(colorscale='YlOrRd' if delay_mode else 'RdBu',cmin=0 if delay_mode else -limit,cmax=limit,colorbar=dict(title=color_title)))
+        extra_cols=['Geldig'] if delay_mode else ['Aantal2019','Aantal2020']
+        extra_hover='<br>Geldige vertragingen: %{customdata[2]:,.0f}' if delay_mode else '<br>2019: %{customdata[2]:,.0f}<br>2020: %{customdata[3]:,.0f}'
+        value_hover='<br>Gem. vertraging (vroeg = 0): %{customdata[1]:.1f} min' if delay_mode else '<br>Verandering: %{customdata[1]:+.1f}%'
+        if layer!='Alleen luchthavens':
+            valid_countries=shown.dropna(subset=['Kaartwaarde'])
+            fig.add_trace(go.Choropleth(locations=valid_countries.iso,z=valid_countries.Kaartwaarde,text=valid_countries.country.astype(str),coloraxis='coloraxis',marker_line_color='white',marker_line_width=.5,customdata=valid_countries[['Bewegingen','Kaartwaarde']+extra_cols].to_numpy(),hovertemplate='<b>%{text}</b><br>Bewegingen: %{customdata[0]:,.0f}'+value_hover+extra_hover+'<extra>Land</extra>',name='Landen'))
+        if layer!='Alleen landen':
+            valid_points=points.dropna(subset=['Kaartwaarde'])
+            fig.add_trace(go.Scattergeo(lat=valid_points.lat,lon=valid_points.lon,mode='markers',text=valid_points.airport_name.astype(str),marker=dict(size=valid_points.Bewegingen,sizemode='area',sizeref=2*float(airports.Bewegingen.max())/23**2,sizemin=4,color=valid_points.Kaartwaarde,coloraxis='coloraxis',opacity=1,line=dict(width=1,color=INK)),customdata=valid_points[['Bewegingen','Kaartwaarde']+extra_cols].to_numpy(),hovertemplate='<b>%{text}</b><br>Bewegingen: %{customdata[0]:,.0f}'+value_hover+extra_hover+'<extra>Luchthaven</extra>',name='Luchthavens · grootte = volume'))
+            unknown_points=points[points.Kaartwaarde.isna()]
+            if not unknown_points.empty:
+                fig.add_trace(go.Scattergeo(lat=unknown_points.lat,lon=unknown_points.lon,mode='markers',text=unknown_points.airport_name.astype(str),marker=dict(size=6,color='#94a3b8',symbol='circle-open'),hovertemplate='<b>%{text}</b><br>Onvoldoende gegevens voor deze kleurwaarde<extra></extra>',name='Onvoldoende gegevens'))
+        if finite.empty:st.info('Geen locaties met voldoende gegevens voor deze kaartgrootheid. Pas de filters of de minimumgrens aan.')
     fig.add_trace(go.Scattergeo(lat=[47.4647],lon=[8.54917],mode='markers',marker=dict(size=22,color='#FFE34D',symbol='star',line=dict(color='#172B4D',width=2.5)),hovertemplate='<b>Zürich Airport (ZRH)</b><extra></extra>',name='Zürich · gele ster'))
     if choice!='Geen verbinding uitlichten':
         r=airports[airports.icao.eq(choice)].iloc[0]
         fig.add_trace(go.Scattergeo(lat=[47.4647,float(r.lat)],lon=[8.54917,float(r.lon)],mode='lines',line=dict(width=2,color=ORANGE,dash='dot'),name=f'Uitgelicht: {choice}',hoverinfo='name'))
     fig.update_geos(projection_type='natural earth',showcoastlines=True,showland=True,landcolor='#eef2f6',showcountries=True,countrycolor='#cbd5e1',showocean=True,oceancolor='#e8f1fa')
     if focus!='Hele selectie' or global_region=='Europa' or global_countries:fig.update_geos(fitbounds='locations')
-    fig.update_layout(height=550,title=f'{len(shown)} landen · {len(points)} luchthavens',legend=dict(orientation='h',y=-.08,x=0))
+    fig.update_layout(height=550,title=f'{map_metric} · {len(shown)} landen · {len(points)} luchthavens',legend=dict(orientation='h',y=-.08,x=0))
     chart(fig,key='netwerkkaart')
+    if map_metric!='Verkeersvolume':
+        compared=shown.dropna(subset=['Kaartwaarde'])
+        if not compared.empty:
+            if map_metric=='Gemiddelde vertraging':
+                row=compared.loc[compared.Kaartwaarde.idxmax()]
+                st.info(f'Vertragingspatroon: {row.country} heeft in de getoonde selectie het hoogste landgemiddelde: {row.Kaartwaarde:.1f} minuten (vroeg = 0), op basis van {number(row.Geldig)} geldige registraties. Verschillen kunnen ook met de vluchtmix samenhangen.')
+            else:
+                row=compared.loc[compared.Kaartwaarde.idxmin()]
+                st.info(f'Veranderingspatroon: {row.country} heeft de laagste procentuele verandering onder de getoonde landen met voldoende gegevens: {row.Kaartwaarde:+.1f}% ({number(row.Aantal2019)} → {number(row.Aantal2020)} bewegingen).')
     pattern_data=d if focus=='Hele selectie' else d[d.country.eq(focus)]
     leaders=pattern_data.groupby('country',observed=True).size().sort_values(ascending=False).head(4)
     if not leaders.empty:
@@ -393,32 +440,40 @@ def render_network():
         st.info(f'Patroon op de kaart: binnen {scope} gaat het meeste verkeer van en naar Zürich naar {ranking}. {europe:.1f}% van alle bewegingen in deze selectie betreft Europese luchthavens.')
         unknown=int(pattern_data.region.eq('Onbekend').sum())
         if unknown:st.caption(f'Voor {number(unknown)} bewegingen is de regio onbekend; deze blijven in de noemer van het Europese aandeel staan.')
-    st.caption('Blauwe landen = totale verbindingen met Zürich, via een logaritmische schaal. Oranje cirkels = afzonderlijke luchthavens; oppervlakte = volume. Scroll of gebruik de zoomknoppen, sleep om te verplaatsen en hover voor details. De uitgelichte lijn is een schematische verbinding, geen gemeten vliegroute. Grijs betekent geen getekende waarde, niet bewezen nul.')
+    if map_metric=='Verkeersvolume':
+        st.caption('Blauwe landen = totale verbindingen met Zürich, via een logaritmische schaal. Oranje cirkels = afzonderlijke luchthavens; oppervlakte = volume.')
+    elif map_metric=='Gemiddelde vertraging':
+        st.caption(f'Geel naar rood = toenemende gemiddelde vertraging in minuten; vroeg telt als 0. De richting volgt de zijbalk. Minimaal {map_minimum} geldige vertragingen per locatie; landgemiddelden wegen iedere vlucht even zwaar. Een kleine steekproef krijgt geen kleurwaarde. Cirkeloppervlakte blijft verkeersvolume; hover toont aantallen en minuten.')
+    else:
+        st.caption('Rood = afname, blauw = toename, wit = rond 0%. De schaal is symmetrisch rond nul. Vergelijking van dezelfde geselecteerde maanden en richting: (2020 / 2019 − 1) × 100. Minimaal 100 bewegingen in 2019 en 20 in 2020 per locatie. Ontbrekend in een jaar wordt niet als nul ingevuld. Cirkeloppervlakte = volume van beide jaren.')
+    st.caption('Scroll of gebruik de zoomknoppen, sleep om te verplaatsen en hover voor details. De uitgelichte lijn is een schematische verbinding, geen gemeten vliegroute. Grijs betekent geen getekende waarde, niet bewezen nul.')
     unmapped=int(d.lat.isna().sum())
     if unmapped:st.caption(f'{number(unmapped)} bewegingen zonder luchthavenlocatie ontbreken op de puntenkaart, maar blijven in de tijdgrafiek en selectie meetellen.')
     st.divider()
     render_traffic(None if choice=='Geen verbinding uitlichten' else choice)
-    st.divider();st.subheader('Welke verbindingen veranderden het sterkst?')
-    st.caption('De tijdgrafiek toont het totale ritme. Hier vergelijken we het volume van afzonderlijke verbindingen tussen dezelfde geselecteerde maanden van beide jaren.')
-    if set(years)=={2019,2020}:
-        v=d.groupby(['icao','year'],observed=True).size().unstack('year').reindex(columns=[2019,2020])
-        # Alleen routes met waarnemingen in beide jaren: ontbrekend is geen nul.
-        v=v.dropna();v=v[(v[2019]>=100)&(v[2020]>=20)].copy()
-        v['Verandering (%)']=(v[2020]/v[2019]-1)*100
-        if choice!='Geen verbinding uitlichten' and choice in v.index:
-            row=v.loc[choice];st.info(f'{choice}: {number(row[2019])} → {number(row[2020])} bewegingen ({row["Verandering (%)"]:+.1f}%).')
-        if not v.empty:
-            # Grootste verschuivingen, niet opnieuw een ranglijst van grootste volumes.
-            shifts=v.reindex(v['Verandering (%)'].abs().sort_values(ascending=False).head(10).index).sort_values('Verandering (%)').reset_index()
-            labels=airports.drop_duplicates('icao').set_index('icao').city.astype(str)
-            shifts['Verbinding']=shifts.icao.astype(str)+' · '+shifts.icao.map(labels).fillna('Onbekend').astype(str)
-            shifts=shifts.rename(columns={2019:'2019',2020:'2020'})
-            fig=px.bar(shifts,x='Verandering (%)',y='Verbinding',orientation='h',color='Verandering (%)',color_continuous_scale='RdBu',color_continuous_midpoint=0,hover_data={'2019':':,.0f','2020':':,.0f'},title='Grootste relatieve verschuivingen tussen 2019 en 2020')
-            fig.update_layout(coloraxis_showscale=False,height=420);fig.add_vline(x=0,line_color=INK);chart(fig,key='routeverschuiving')
-            st.caption('Alleen verbindingen met minimaal 100 bewegingen in 2019 en 20 in 2020, beide waargenomen. Dat begrenst instabiele percentages. Routes zonder rij in één jaar worden niet als volledig verdwenen voorgesteld.')
-        else:st.info('Te weinig verbindingen met voldoende waarnemingen in beide jaren. Verruim de selectie.')
-    else:
-        st.info('Selecteer beide jaren links voor de routevergelijking. De kaart en tijdgrafiek blijven beschikbaar voor één jaar.')
+    with st.expander('Routeveranderingen in detail',on_change='rerun',key='routedetails') as route_exp:
+        if route_exp.open:
+            st.divider();st.subheader('Welke verbindingen veranderden het sterkst?')
+            st.caption('De tijdgrafiek toont het totale ritme. Hier vergelijken we het volume van afzonderlijke verbindingen tussen dezelfde geselecteerde maanden van beide jaren.')
+            if set(years)=={2019,2020}:
+                v=d.groupby(['icao','year'],observed=True).size().unstack('year').reindex(columns=[2019,2020])
+                # Alleen routes met waarnemingen in beide jaren: ontbrekend is geen nul.
+                v=v.dropna();v=v[(v[2019]>=100)&(v[2020]>=20)].copy()
+                v['Verandering (%)']=(v[2020]/v[2019]-1)*100
+                if choice!='Geen verbinding uitlichten' and choice in v.index:
+                    row=v.loc[choice];st.info(f'{choice}: {number(row[2019])} → {number(row[2020])} bewegingen ({row["Verandering (%)"]:+.1f}%).')
+                if not v.empty:
+                    # Grootste verschuivingen, niet opnieuw een ranglijst van grootste volumes.
+                    shifts=v.reindex(v['Verandering (%)'].abs().sort_values(ascending=False).head(10).index).sort_values('Verandering (%)').reset_index()
+                    labels=airports.drop_duplicates('icao').set_index('icao').city.astype(str)
+                    shifts['Verbinding']=shifts.icao.astype(str)+' · '+shifts.icao.map(labels).fillna('Onbekend').astype(str)
+                    shifts=shifts.rename(columns={2019:'2019',2020:'2020'})
+                    fig=px.bar(shifts,x='Verandering (%)',y='Verbinding',orientation='h',color='Verandering (%)',color_continuous_scale='RdBu',color_continuous_midpoint=0,hover_data={'2019':':,.0f','2020':':,.0f'},title='Grootste relatieve verschuivingen tussen 2019 en 2020')
+                    fig.update_layout(coloraxis_showscale=False,height=420);fig.add_vline(x=0,line_color=INK);chart(fig,key='routeverschuiving')
+                    st.caption('Alleen verbindingen met minimaal 100 bewegingen in 2019 en 20 in 2020, beide waargenomen. Dat begrenst instabiele percentages. Routes zonder rij in één jaar worden niet als volledig verdwenen voorgesteld.')
+                else:st.info('Te weinig verbindingen met voldoende waarnemingen in beide jaren. Verruim de selectie.')
+            else:
+                st.info('Selecteer beide jaren links voor de routevergelijking. De kaart en tijdgrafiek blijven beschikbaar voor één jaar.')
     with st.expander('Tabellen achter de kaart',on_change='rerun',key='netwerktabellen') as exp:
         if exp.open:
             st.dataframe(country.drop(columns='iso'),width='stretch',hide_index=True)
