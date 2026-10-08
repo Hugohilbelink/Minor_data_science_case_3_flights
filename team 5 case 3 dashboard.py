@@ -111,10 +111,12 @@ def render_traffic(destination=None):
     dates=pd.date_range(d.date.min(),d.date.max())
     dates=dates[dates.year.isin(years)&pd.Series(dates.month).between(*months).to_numpy()]
     ts=daily_series(sub,dates)
+    directions=['Aankomst','Vertrek'] if global_direction=='Beide' else [global_direction]
+    ts=ts[ts.direction.isin(directions)]
     freq={'Dag':'D','Week':'W-MON','Maand':'MS'}[unit]
     if unit!='Dag':
         groups=[]
-        for direct in ['Aankomst','Vertrek']:
+        for direct in directions:
             x=ts[ts.direction.eq(direct)].set_index('date')
             parts=[x[x.index.year==yr] for yr in [2019,2020]] if mode=='2019 tegenover 2020' else [x]
             for part in parts:
