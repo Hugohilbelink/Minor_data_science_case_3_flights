@@ -32,16 +32,19 @@ def reset_filters():
     for key,value in defaults.items():st.session_state[key]=value
 
 with st.sidebar:
+    active_page=st.session_state.get('hoofdtabs','Overzicht')
+    analysis_filters=active_page in PAGES[:3]
     st.markdown('## ✈ Zürich Airport')
     st.caption('CASE 3 · MAAK JE VERGELIJKING')
-    years=st.multiselect('Jaren',[2019,2020],default=[2019,2020],key='filter_years')
-    months=st.slider('Maanden in beide jaren',1,12,(1,12),key='filter_months')
-    global_direction=st.selectbox('Richting',['Beide','Aankomst','Vertrek'],key='filter_direction')
-    global_region=st.selectbox('Gebied',['Wereld','Europa','Buiten Europa'],key='filter_region')
+    years=st.multiselect('Jaren',[2019,2020],default=[2019,2020],key='filter_years',disabled=not analysis_filters)
+    months=st.slider('Maanden in beide jaren',1,12,(1,12),key='filter_months',disabled=not analysis_filters)
+    global_direction=st.selectbox('Richting',['Beide','Aankomst','Vertrek'],key='filter_direction',disabled=not analysis_filters)
+    global_region=st.selectbox('Gebied',['Wereld','Europa','Buiten Europa'],key='filter_region',disabled=not analysis_filters)
     options=all_d if global_region=='Wereld' else all_d[all_d.region.eq(global_region)]
-    global_countries=st.multiselect('Landen',sorted(options.country.dropna().unique()),key='filter_countries',help='Leeg betekent alle landen in het gekozen gebied.')
-    aggregation=st.selectbox('Tijdsindeling',['Maand','Week','Dag'],key='filter_aggregation')
-    minimum=st.slider('Minimaal aantal bewegingen per weerdag',1,200,20,key='filter_minimum')
+    global_countries=st.multiselect('Landen',sorted(options.country.dropna().unique()),key='filter_countries',help='Leeg betekent alle landen in het gekozen gebied.',disabled=not analysis_filters)
+    aggregation=st.selectbox('Tijdsindeling',['Maand','Week','Dag'],key='filter_aggregation',disabled=active_page!='Verkeer & netwerk')
+    minimum=st.slider('Minimaal aantal bewegingen per weerdag',1,200,20,key='filter_minimum',disabled=active_page!='Vertraging & weer')
+    st.caption('Grijze filters gelden niet voor dit tabje. Je selectie blijft bewaard wanneer je van tab wisselt.')
     st.caption('Jaren, maanden, richting, gebied en landen gelden voor Overzicht, Verkeer & netwerk en Vertraging & weer. Tijdsindeling geldt voor de tijdgrafieken.')
     st.caption('Het voorspelmodel en de dataverantwoording gebruiken de vaste Zürich-bron. De vluchtprofielen gaan apart over Amsterdam–Barcelona.')
     st.button('Herstel filters',on_click=reset_filters)
@@ -229,11 +232,14 @@ def render_weather():
     group=st.selectbox('Uitsplitsing',['Gepland uur','Vliegtuigtype','Baan','Afstandsklasse'])
     gcol={'Gepland uur':'hour','Vliegtuigtype':'ACT','Baan':'RWY','Afstandsklasse':'distance_band'}[group]
     sub=sub.copy();sub['distance_band']=pd.cut(sub.distance_km,[0,1000,2500,5000,20000],labels=['<1.000 km','1.000–2.500 km','2.500–5.000 km','>5.000 km'],include_lowest=True)
-    groups=sub.groupby(gcol,observed=True).agg(Bewegingen=('FLT','size'),Vertraging=('delay','mean'),Mediaan=('delay','median'),Laat=('late15','mean')).reset_index()
-    if group!='Gepland uur':groups=groups.nlargest(12,'Bewegingen')
+    groups=sub.groupby([gcol,'year'],observed=True).agg(Bewegingen=('FLT','size'),Vertraging=('delay','mean'),Mediaan=('delay','median'),Laat=('late15','mean')).reset_index()
+    if group!='Gepland uur':
+        top=groups.groupby(gcol,observed=True).Bewegingen.sum().nlargest(12).index
+        groups=groups[groups[gcol].isin(top)]
+    groups['Jaar']=groups.year.astype(str)
     groups[gcol]=groups[gcol].astype(str)
-    fig=px.bar(groups,x=gcol,y='Vertraging',hover_data=['Bewegingen','Mediaan','Laat'],labels={gcol:group,'Vertraging':'Gemiddelde vertraging (min)'},title=f'{direction}: vertraging verschilt per {group.lower()}')
-    chart(fig);st.caption('Maximaal 12 categorieën op basis van volume. Baan is beschrijvend: de gebruikte baan is niet automatisch vooraf bekend en zit daarom niet in het voorspelmodel.')
+    fig=px.bar(groups,x=gcol,y='Vertraging',color='Jaar',barmode='group',color_discrete_map=COLORS,hover_data=['Bewegingen','Mediaan','Laat'],labels={gcol:group,'Vertraging':'Gemiddelde vertraging (min)'},title=f'{direction}: vertraging per {group.lower()} en jaar')
+    chart(fig);st.caption('Elk geselecteerd jaar heeft eigen balken: blauw = 2019, oranje = 2020. Ontbrekende categorieën worden geen nul. Maximaal 12 categorieën op basis van gezamenlijk volume, zodat beide jaren dezelfde categorieën vergelijken. Hier telt vroeg als negatieve vertraging. Baan is beschrijvend en zit niet in het voorspelmodel.')
     with st.expander('Verdeling, uitschieters en export'):
         zoom=st.checkbox('Zoom op -60 tot +180 minuten',True)
         hist=sub[sub.delay.between(-60,180)] if zoom else sub[sub.delay.notna()]
