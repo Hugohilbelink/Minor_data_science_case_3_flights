@@ -159,33 +159,37 @@ def render_correlations(daily,direction):
     available=sorted(daily.jaar.unique().astype(int).tolist())
     if not available:
         st.info('Geen dagen voor deze selectie.');return daily
-    yr=st.selectbox('Jaar voor correlatie en puntenwolk',available,key='correlatiejaar')
-    selected=daily[daily.jaar.eq(yr)].copy()
     delay_label=f'Gemiddelde {"vertrek" if direction=="Vertrek" else "aankomst"}vertraging (vroeg = 0)'
     names={'vertraging':delay_label,'bewegingen':'Bewegingen per dag','regen':'Neerslag','wind':'Gemiddelde wind','windstoot':'Windstoot','temperatuur':'Temperatuur','luchtdruk':'Luchtdruk'}
-    values=selected[list(names)].rename(columns=names)
-    corr=values.corr(method='spearman',min_periods=20)
-    valid=values.notna().astype(int);pairs=valid.T.dot(valid)
-    # Eén helft volstaat: geen dubbele cijfers of betekenisloze zelfcorrelaties.
-    z=corr.to_numpy().copy();z[np.triu_indices(len(names))]=np.nan
-    text=np.where(np.isfinite(z),np.vectorize(lambda x:f'{x:+.2f}')(z),'')
-    fig=go.Figure(go.Heatmap(z=z,x=values.columns,y=values.columns,zmin=-1,zmax=1,zmid=0,colorscale='RdBu_r',text=text,texttemplate='%{text}',customdata=pairs.to_numpy(),hoverongaps=False,hovertemplate='%{y} ↔ %{x}<br>Spearman ρ: %{z:.2f}<br>Gekoppelde dagen: %{customdata}<extra></extra>',colorbar=dict(title='Spearman ρ',tickvals=[-1,-.5,0,.5,1])))
-    fig.update_layout(title=f'{yr} · {len(selected)} dagen · dezelfde dag, één waarneming per dag',height=540,margin=dict(l=140,b=120),xaxis=dict(tickangle=-30),yaxis=dict(autorange='reversed'))
-    chart(fig,key='correlatiematrix')
+    st.caption('De matrices volgen de jaren in de zijbalk. Bij twee jaren tonen we twee afzonderlijke matrices op dezelfde schaal; de jaren worden niet tot één correlatie samengevoegd.')
     st.write('**Zo lees je de matrix:** kies een kolom en een rij; hun kruispunt toont de samenhang. +0,50 betekent een matig positief verband: hogere waarden gaan vaak samen, met uitzonderingen. Het betekent geen 50% meer vertraging en bewijst geen oorzaak. −0,50 betekent een matig tegengesteld verband; rond 0 is er weinig monotone samenhang. Elke waarneming is één dag.')
     st.caption('Rood = positief verband, blauw = negatief; wit rond nul = weinig monotone samenhang. Spearman gebruikt rangordes en is minder gevoelig voor extreme vertragingen. Minimaal 20 complete dagparen per cel; ontbrekend blijft leeg. De bovenste helft en zelfcorrelaties zijn weggelaten. Hover toont het aantal gekoppelde dagen.')
-    relations=corr[delay_label].drop(delay_label).dropna()
-    if not relations.empty:
-        strongest=relations.abs().idxmax();rho=float(relations[strongest]);n=int(pairs.loc[strongest,delay_label])
-        strength='zwak' if abs(rho)<.3 else 'matig' if abs(rho)<.6 else 'sterk'
-        st.info(f'Het sterkste verband met vertraging in deze selectie is {strongest.lower()}: ρ = {rho:+.2f} ({n} dagen), een {strength} verband. Dit bewijst geen oorzaak en is geen maat voor voorspelkwaliteit.')
     st.caption('We vergelijken binnen één jaar om de verkeersbreuk tussen 2019 en 2020 niet als weerverband te presenteren. Seizoen, drukte en vluchtmix kunnen nog steeds meespelen. Het model gebruikt uitsluitend eerder bekende informatie; deze matrix beschrijft waarnemingen op dezelfde dag. Aandeel te laat en minimum-/maximumtemperatuur zijn weggelaten om bijna dezelfde informatie niet dubbel op te nemen.')
-    if len(selected)<20:st.warning('Minder dan twintig dagen: verruim de selectie om verbanden te kunnen beoordelen.')
-    with st.expander('Aantal dagen per verband en correlatietabel',on_change='rerun',key='correlatiedetails') as exp:
-        if exp.open:
-            st.dataframe(corr.style.format('{:+.2f}',na_rep='Onvoldoende data'),width='stretch')
-            st.dataframe(pairs,width='stretch');download(corr.reset_index(),'correlaties.csv')
-    return selected
+    for yr in sorted(years):
+        selected=daily[daily.jaar.eq(yr)].copy()
+        st.markdown(f'### Correlatiematrix {yr}')
+        if selected.empty:
+            st.info(f'{yr}: geen dagen na de huidige filters en minimumgrens.');continue
+        values=selected[list(names)].rename(columns=names)
+        corr=values.corr(method='spearman',min_periods=20)
+        valid=values.notna().astype(int);pairs=valid.T.dot(valid)
+        # Eén helft volstaat: geen dubbele cijfers of betekenisloze zelfcorrelaties.
+        z=corr.to_numpy().copy();z[np.triu_indices(len(names))]=np.nan
+        text=np.where(np.isfinite(z),np.vectorize(lambda x:f'{x:+.2f}')(z),'')
+        fig=go.Figure(go.Heatmap(z=z,x=values.columns,y=values.columns,zmin=-1,zmax=1,zmid=0,colorscale='RdBu_r',text=text,texttemplate='%{text}',customdata=pairs.to_numpy(),hoverongaps=False,hovertemplate='%{y} ↔ %{x}<br>Spearman ρ: %{z:.2f}<br>Gekoppelde dagen: %{customdata}<extra></extra>',colorbar=dict(title='Spearman ρ',tickvals=[-1,-.5,0,.5,1])))
+        fig.update_layout(title=f'{yr} · {len(selected)} dagen · dezelfde dag, één waarneming per dag',height=540,margin=dict(l=140,b=120),xaxis=dict(tickangle=-30),yaxis=dict(autorange='reversed'))
+        chart(fig,key=f'correlatiematrix_{yr}')
+        relations=corr[delay_label].drop(delay_label).dropna()
+        if not relations.empty:
+            strongest=relations.abs().idxmax();rho=float(relations[strongest]);n=int(pairs.loc[strongest,delay_label])
+            strength='zwak' if abs(rho)<.3 else 'matig' if abs(rho)<.6 else 'sterk'
+            st.info(f'{yr}: het sterkste verband met vertraging in deze selectie is {strongest.lower()}: ρ = {rho:+.2f} ({n} dagen), een {strength} verband. Dit bewijst geen oorzaak en is geen maat voor voorspelkwaliteit.')
+        if len(selected)<20:st.warning('Minder dan twintig dagen: verruim de selectie om verbanden te kunnen beoordelen.')
+        with st.expander('Aantal dagen per verband en correlatietabel',on_change='rerun',key=f'correlatiedetails_{yr}') as exp:
+            if exp.open:
+                st.dataframe(corr.style.format('{:+.2f}',na_rep='Onvoldoende data'),width='stretch')
+                st.dataframe(pairs,width='stretch');download(corr.reset_index(),f'correlaties_{yr}.csv')
+    return daily
 
 def render_weather():
     heading('ZRH / 04 · VERKLAREN','Meer regen, meer vertraging?','Het rooster alleen kent het weer niet. Door beide op lokale kalenderdatum te koppelen kunnen we dagen vergelijken, zonder samenhang als oorzaak te presenteren.')
@@ -197,23 +201,28 @@ def render_weather():
     st.subheader('Hoe ziet één verband er in de praktijk uit?')
     summary=daily.copy();summary['Weer']=np.select([summary.regen.isna(),summary.regen.ge(1)],['Onbekend','Regen ≥1 mm'],default='Droog / <1 mm')
     agg=summary.groupby(['Jaar','Weer']).agg(Dagen=('date','size'),Vertraging_min=('vertraging','mean'),Mediaan_min=('vertraging','median'),Vluchten_per_dag=('bewegingen','mean')).reset_index()
-    kpis=st.columns(2)
-    for slot,yr in zip(kpis,[2019,2020]):
+    kpis=st.columns(len(years))
+    for slot,yr in zip(kpis,sorted(years)):
         row=agg[agg.Jaar.eq(str(yr))].set_index('Weer')
         valid={'Regen ≥1 mm','Droog / <1 mm'}.issubset(row.index)
         diff=row.loc['Regen ≥1 mm','Vertraging_min']-row.loc['Droog / <1 mm','Vertraging_min'] if valid else np.nan
         slot.metric(f'{yr} · regen minus droog',f'{diff:+.1f} min' if pd.notna(diff) else 'Onvoldoende data')
         if valid:slot.caption(f'{int(row.loc["Regen ≥1 mm","Dagen"])} regenachtige en {int(row.loc["Droog / <1 mm","Dagen"])} droge dagen')
-    st.caption('Verschil in gemiddelde vertraging (vroeg = 0) binnen elk jaar. Regen ≥1 mm; droog <1 mm. Iedere dag weegt even zwaar. De KPI’s volgen de zijbalkfilters; de puntenwolk gebruikt het gekozen matrixjaar. Samenhang bewijst geen oorzaak. Ontbrekende neerslag telt niet als droog.')
+    st.caption('Verschil in gemiddelde vertraging (vroeg = 0) binnen elk jaar. Regen ≥1 mm; droog <1 mm. Iedere dag weegt even zwaar. De KPI’s volgen de zijbalkfilters; de puntenwolk toont dezelfde geselecteerde jaren. Samenhang bewijst geen oorzaak. Ontbrekende neerslag telt niet als droog.')
     with st.expander('Exacte cijfers achter regen en droog'):
         st.dataframe(agg.rename(columns={'Vertraging_min':'Gem. min','Mediaan_min':'Mediaan min','Vluchten_per_dag':'Vluchten/dag'}).round(1),width='stretch',hide_index=True)
     variable=st.selectbox('Vergelijk met vertraging',['Neerslag (mm)','Wind (km/h)','Windstoot (km/h)','Temperatuur (°C)','Luchtdruk (hPa)','Bewegingen per dag']);col={'Neerslag (mm)':'regen','Wind (km/h)':'wind','Windstoot (km/h)':'windstoot','Temperatuur (°C)':'temperatuur','Luchtdruk (hPa)':'luchtdruk','Bewegingen per dag':'bewegingen'}[variable]
     rain=matrix_days.dropna(subset=[col,'vertraging']).copy()
     if rain.empty:st.info('Geen dagen met voldoende bewegingen en deze weermeting. Verlaag de minimumgrens.');st.stop()
-    fig=px.scatter(rain,x=col,y='vertraging',color='Jaar',size='bewegingen',size_max=18,opacity=.65,color_discrete_map=COLORS,hover_data={'date':True,'bewegingen':True},labels={col:variable,'vertraging':f'Gemiddelde {"vertrek" if direction=="Vertrek" else "aankomst"}vertraging (min; vroeg = 0)'},title=f'{len(rain)} dagen: spreiding is belangrijker dan één gemiddelde')
+    fig=px.scatter(rain,x=col,y='vertraging',color='Jaar',symbol='Jaar',symbol_map={'2019':'circle','2020':'diamond'},size='bewegingen',size_max=18,opacity=.65,color_discrete_map=COLORS,hover_data={'date':True,'bewegingen':True},labels={col:variable,'vertraging':f'Gemiddelde {"vertrek" if direction=="Vertrek" else "aankomst"}vertraging (min; vroeg = 0)'},title=f'{len(rain)} dagen: spreiding is belangrijker dan één gemiddelde')
     chart(fig)
-    corr=rain[col].corr(rain.vertraging,method='spearman')
-    st.caption(f'Eén punt = één dag in het gekozen matrixjaar. Spearman-correlatie {corr:.2f}; dit corrigeert niet voor seizoen, routeaanbod of drukte. {len(matrix_days)-len(rain)} dagen vallen weg door ontbrekend weer of vertraging. Te vroeg wordt voor deze grootheid 0 min, zodat vroege vluchten late vluchten niet wegmiddelen.')
+    relations=[]
+    for yr in sorted(years):
+        group_days=rain[rain.jaar.eq(yr)]
+        rho=group_days[col].corr(group_days.vertraging,method='spearman') if len(group_days)>=20 else np.nan
+        relations.append(f'{yr}: ρ = {rho:+.2f} ({len(group_days)} dagen)' if pd.notna(rho) else f'{yr}: onvoldoende complete dagen of variatie')
+    st.caption('Spearman per jaar: '+ '; '.join(relations)+'. Geen gezamenlijke correlatie over beide jaren: seizoen, verkeersdrukte en vluchtmix kunnen verschillen.')
+    st.caption(f'Eén punt = één dag. De jaren volgen de zijbalk: 2019 = blauwe cirkel, 2020 = oranje ruit. {len(matrix_days)-len(rain)} dagen vallen weg door ontbrekend weer of vertraging. Vroeg telt als 0 min. Samenhang bewijst geen oorzaak.')
     st.divider();st.subheader('Wat gebeurt er binnen de dag?')
     group=st.selectbox('Uitsplitsing',['Gepland uur','Vliegtuigtype','Baan','Afstandsklasse'])
     gcol={'Gepland uur':'hour','Vliegtuigtype':'ACT','Baan':'RWY','Afstandsklasse':'distance_band'}[group]
