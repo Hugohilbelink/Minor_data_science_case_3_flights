@@ -383,6 +383,16 @@ def render_network():
     if focus!='Hele selectie' or global_region=='Europa' or global_countries:fig.update_geos(fitbounds='locations')
     fig.update_layout(height=550,title=f'{len(shown)} landen · {len(points)} luchthavens',legend=dict(orientation='h',y=-.08,x=0))
     chart(fig,key='netwerkkaart')
+    pattern_data=d if focus=='Hele selectie' else d[d.country.eq(focus)]
+    leaders=pattern_data.groupby('country',observed=True).size().sort_values(ascending=False).head(4)
+    if not leaders.empty:
+        ranked=[f'{name} ({number(count)} bewegingen)' for name,count in leaders.items()]
+        ranking=ranked[0] if len(ranked)==1 else ranked[0]+', gevolgd door '+', '.join(ranked[1:])
+        europe=100*pattern_data.region.eq('Europa').sum()/len(pattern_data)
+        scope='de selectie uit de zijbalk' if focus=='Hele selectie' else f'de selectie ingezoomd op {focus}'
+        st.info(f'Patroon op de kaart: binnen {scope} gaat het meeste verkeer van en naar Zürich naar {ranking}. {europe:.1f}% van alle bewegingen in deze selectie betreft Europese luchthavens.')
+        unknown=int(pattern_data.region.eq('Onbekend').sum())
+        if unknown:st.caption(f'Voor {number(unknown)} bewegingen is de regio onbekend; deze blijven in de noemer van het Europese aandeel staan.')
     st.caption('Blauwe landen = totale verbindingen met Zürich, via een logaritmische schaal. Oranje cirkels = afzonderlijke luchthavens; oppervlakte = volume. Scroll of gebruik de zoomknoppen, sleep om te verplaatsen en hover voor details. De uitgelichte lijn is een schematische verbinding, geen gemeten vliegroute. Grijs betekent geen getekende waarde, niet bewezen nul.')
     unmapped=int(d.lat.isna().sum())
     if unmapped:st.caption(f'{number(unmapped)} bewegingen zonder luchthavenlocatie ontbreken op de puntenkaart, maar blijven in de tijdgrafiek en selectie meetellen.')
